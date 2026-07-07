@@ -17,7 +17,7 @@ let server;
 let browser;
 
 before(async () => {
-  server = spawn("node", ["server.mjs"], { cwd: ROOT, env: { ...process.env, PORT: String(PORT) } });
+  server = spawn("node", ["server.mjs"], { cwd: ROOT, env: { ...process.env, PORT: String(PORT), OBS_NO_OPEN: "1" } });
   await new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error("server did not start")), 10000);
     server.stdout.on("data", (d) => {
