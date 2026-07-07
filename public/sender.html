@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Phone Cam — Sender</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body class="sender">
+    <video id="preview" playsinline autoplay muted></video>
+
+    <div class="hud">
+      <div id="status" class="status">Starting camera…</div>
+      <div class="controls">
+        <button id="flip" type="button">Flip camera</button>
+        <select id="res" aria-label="Resolution">
+          <option value="1280x720">720p</option>
+          <option value="1920x1080" selected>1080p</option>
+          <option value="3840x2160">4K</option>
+        </select>
+        <label class="mic"><input id="mic" type="checkbox" checked /> Mic</label>
+      </div>
+    </div>
+
+    <script type="module">
+      import { Signal, RTC_CONFIG } from "/signal.js";
+
+      const preview = document.getElementById("preview");
+      const statusEl = document.getElementById("status");
+      const flipBtn = document.getElementById("flip");
+      const resSel = document.getElementById("res");
+      const micBox = document.getElementById("mic");
+
+      let facing = "environment"; // back camera by default — better for OBS scenes
+      let stream = null;
+      let pc = null;
+      let peerPresent = false;
+
+      const setStatus = (t, cls = "") => {
+        statusEl.textContent = t;
+        statusEl.className = "status " + cls;
+      };
+
+      async function getCamera() {
+        const [w, h] = resSel.value.split("x").map(Number);
+        const constraints = {
+          video: { facingMode: { ideal: facing }, width: { ideal: w }, height: { ideal: h } },
+          audio: micBox.checked,
+        };
+        if (stream) stream.getTracks().forEach((t) => t.stop());
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+        preview.srcObject = stream;
+      }
+
+      function buildPeer() {
+        if (pc) pc.close();
+        pc = new RTCPeerConnection(RTC_CONFIG);
+        for (const track of stream.getTracks()) pc.addTrack(track, stream);
+        pc.onicecandidate = (e) => {
+          if (e.candidate) sig.send({ type: "ice", candidate: e.candidate });
+        };
+        pc.onconnectionstatechange = () => {
+          const s = pc.connectionState;
+          if (s === "connected") setStatus("Live in OBS ●", "live");
+          else if (s === "connecting") setStatus("Connecting…");
+          else if (s === "failed" || s === "disconnected") setStatus("Reconnecting…", "warn");
+        };
+      }
+
+      async function offer() {
+        if (!stream || !peerPresent) return;
+        buildPeer();
+        const desc = await pc.createOffer();
+        await pc.setLocalDescription(desc);
+        sig.send({ type: "offer", sdp: pc.localDescription });
+        setStatus("Connecting…");
+      }
+
+      const sig = new Signal("sender");
+      sig.addEventListener("msg", async ({ detail: msg }) => {
+        if (msg.type === "peer") {
+          peerPresent = msg.present;
+          if (peerPresent) offer();
+          else setStatus("Waiting for OBS…", "warn");
+        } else if (msg.type === "answer") {
+          await pc.setRemoteDescription(msg.sdp);
+        } else if (msg.type === "ice" && pc) {
+          try {
+            await pc.addIceCandidate(msg.candidate);
+          } catch {}
+        }
+      });
+
+      flipBtn.onclick = async () => {
+        facing = facing === "environment" ? "user" : "environment";
+        await getCamera();
+        offer();
+      };
+      resSel.onchange = async () => {
+        await getCamera();
+        offer();
+      };
+      micBox.onchange = async () => {
+        await getCamera();
+        offer();
+      };
+
+      (async () => {
+        try {
+          await getCamera();
+          setStatus("Camera ready — waiting for OBS…", "warn");
+          // If OBS (the receiver) was already connected before the camera came up,
+          // the "peer present" signal already fired — kick off the offer now.
+          if (peerPresent) offer();
+        } catch (err) {
+          setStatus("Camera blocked: " + err.message, "warn");
+        }
+      })();
+    </script>
+  </body>
+</html>

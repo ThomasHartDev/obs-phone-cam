@@ -1,0 +1,128 @@
+:root {
+  --bg: #0e1116;
+  --card: #171b22;
+  --border: #262c36;
+  --fg: #e7ebf0;
+  --muted: #8a94a3;
+  --accent: #4ea1ff;
+  --live: #37d67a;
+  --warn: #ffb454;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+/* ---------- landing ---------- */
+.landing main {
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 32px 20px 64px;
+}
+.landing h1 {
+  font-size: 1.6rem;
+  letter-spacing: -0.02em;
+  margin: 0 0 4px;
+}
+.landing .sub {
+  color: var(--muted);
+  margin: 0 0 28px;
+}
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 20px 22px;
+  margin-bottom: 18px;
+}
+.card h2 {
+  font-size: 1rem;
+  margin: 0 0 14px;
+}
+.card img#qr {
+  display: block;
+  border-radius: 12px;
+  background: #fff;
+  padding: 8px;
+}
+.mono {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.85rem;
+  color: var(--accent);
+  word-break: break-all;
+  margin: 10px 0 0;
+}
+.mono.copy {
+  cursor: pointer;
+}
+.note {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  margin: 12px 0 0;
+}
+
+/* ---------- sender ---------- */
+.sender {
+  height: 100vh;
+  overflow: hidden;
+}
+.sender #preview {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #000;
+}
+.hud {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 16px calc(16px + env(safe-area-inset-right)) calc(20px + env(safe-area-inset-bottom))
+    calc(16px + env(safe-area-inset-left));
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.65));
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.status {
+  align-self: flex-start;
+  background: rgba(0, 0, 0, 0.55);
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+}
+.status.live {
+  color: var(--live);
+}
+.status.warn {
+  color: var(--warn);
+}
+.controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.controls button,
+.controls select {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--fg);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 0.9rem;
+}
+.controls .mic {
+  color: var(--fg);
+  font-size: 0.9rem;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}

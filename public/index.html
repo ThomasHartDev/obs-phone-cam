@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>obs-phone-cam</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body class="landing">
+    <main>
+      <h1>obs-phone-cam</h1>
+      <p class="sub">Your iPhone as an OBS camera source. Same Wi-Fi, no app to install.</p>
+
+      <section class="card">
+        <h2>1. Scan on your iPhone</h2>
+        <img id="qr" alt="QR code to open the sender page" width="240" height="240" />
+        <p class="mono" id="senderUrl">…</p>
+        <p class="note">Safari will warn about the certificate the first time. Tap “Show details” → “visit this website”, then allow camera access.</p>
+      </section>
+
+      <section class="card">
+        <h2>2. Add to OBS</h2>
+        <p>In OBS: <strong>Sources → + → Browser</strong>, then set the URL to:</p>
+        <p class="mono copy" id="obsUrl" title="click to copy">…</p>
+        <p class="note">Set the Browser Source width/height to your canvas (e.g. 1920×1080). Then hit <strong>Start Virtual Camera</strong> in OBS if you want it in Zoom/Teams too.</p>
+      </section>
+    </main>
+
+    <script>
+      (async () => {
+        const { ips, port } = await fetch("/lan.json").then((r) => r.json());
+        const ip = ips[0] || location.hostname;
+        const senderUrl = `https://${ip}:${port}/sender.html`;
+        const obsUrl = `https://localhost:${port}/receiver.html`;
+        document.getElementById("qr").src = "/qr?url=" + encodeURIComponent(senderUrl);
+        document.getElementById("senderUrl").textContent = senderUrl;
+        const obsEl = document.getElementById("obsUrl");
+        obsEl.textContent = obsUrl;
+        obsEl.onclick = () => navigator.clipboard?.writeText(obsUrl);
+      })();
+    </script>
+  </body>
+</html>

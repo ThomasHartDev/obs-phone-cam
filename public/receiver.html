@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Phone Cam — OBS Source</title>
+    <style>
+      /* OBS Browser Source: transparent bg, no chrome, fill the canvas. */
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: transparent;
+        overflow: hidden;
+      }
+      #feed {
+        width: 100vw;
+        height: 100vh;
+        object-fit: cover;
+        background: #000;
+        display: block;
+      }
+      #hint {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        color: #fff;
+        font: 500 20px/1.4 system-ui, sans-serif;
+        background: #111;
+        text-align: center;
+        padding: 24px;
+      }
+      #hint.hidden {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <video id="feed" playsinline autoplay muted></video>
+    <div id="hint">Waiting for the phone…<br /><small>Open the sender page on your iPhone</small></div>
+
+    <script type="module">
+      import { Signal, RTC_CONFIG } from "/signal.js";
+
+      const feed = document.getElementById("feed");
+      const hint = document.getElementById("hint");
+      let pc = null;
+
+      function buildPeer() {
+        if (pc) pc.close();
+        pc = new RTCPeerConnection(RTC_CONFIG);
+        pc.ontrack = (e) => {
+          feed.srcObject = e.streams[0];
+          hint.classList.add("hidden");
+        };
+        pc.onicecandidate = (e) => {
+          if (e.candidate) sig.send({ type: "ice", candidate: e.candidate });
+        };
+        pc.onconnectionstatechange = () => {
+          if (["failed", "disconnected", "closed"].includes(pc.connectionState)) {
+            hint.classList.remove("hidden");
+          }
+        };
+      }
+
+      const sig = new Signal("receiver");
+      sig.addEventListener("msg", async ({ detail: msg }) => {
+        if (msg.type === "offer") {
+          buildPeer();
+          await pc.setRemoteDescription(msg.sdp);
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          sig.send({ type: "answer", sdp: pc.localDescription });
+        } else if (msg.type === "ice" && pc) {
+          try {
+            await pc.addIceCandidate(msg.candidate);
+          } catch {}
+        }
+      });
+    </script>
+  </body>
+</html>
