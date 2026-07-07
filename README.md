@@ -23,6 +23,10 @@ iPhone (Safari)                     Laptop (OBS)
 
 On the laptop that has OBS:
 
+**Windows:** double-click **`Start Phone Cam.bat`**. It installs on first run, starts the server, and opens your browser to the QR page automatically.
+
+**Or from a terminal (any OS):**
+
 ```bash
 npm install
 npm start

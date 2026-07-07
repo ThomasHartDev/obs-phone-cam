@@ -9,6 +9,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawn } from "node:child_process";
 import { WebSocketServer } from "ws";
 import selfsigned from "selfsigned";
 import QRCode from "qrcode";
@@ -168,7 +169,19 @@ server.listen(PORT, "0.0.0.0", () => {
   console.log("\n  In OBS: add a Browser Source pointing at:");
   console.log(`    https://localhost:${PORT}/receiver.html`);
   console.log(`    (or https://${primary}:${PORT}/receiver.html)\n`);
+  openBrowser(`https://localhost:${PORT}/`);
 });
+
+// Pop the QR/landing page in the default browser so the user never touches a URL.
+// Skipped in tests/CI via OBS_NO_OPEN.
+function openBrowser(url) {
+  if (process.env.OBS_NO_OPEN) return;
+  try {
+    if (process.platform === "win32") spawn("cmd", ["/c", "start", "", url], { detached: true, stdio: "ignore" }).unref();
+    else if (process.platform === "darwin") spawn("open", [url], { detached: true, stdio: "ignore" }).unref();
+    else spawn("xdg-open", [url], { detached: true, stdio: "ignore" }).unref();
+  } catch {}
+}
 
 // Also redirect plain HTTP → HTTPS so a mistyped http:// URL still lands.
 http

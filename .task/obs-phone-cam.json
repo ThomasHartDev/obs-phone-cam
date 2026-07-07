@@ -1,0 +1,38 @@
+{
+  "slug": "obs-phone-cam",
+  "goal": "Free self-hosted replacement for the paid iPhone-camera-into-OBS app: phone streams its camera into OBS with no per-month fee and no app install",
+  "step_further": "Also usable as a Zoom/Teams webcam via OBS Virtual Camera, plus staged turnkey on the laptop so it runs with one command",
+  "status": "done",
+  "created": "2026-07-07T19:51:56.943040+00:00",
+  "criteria": [
+    {
+      "id": "e2e",
+      "desc": "E2E: live WebRTC frames reach OBS receiver page",
+      "kind": "command",
+      "verify": "node --test test/e2e.test.mjs",
+      "last_pass": true,
+      "last_checked": "2026-07-07T19:52:11.794607+00:00",
+      "last_output": "TAP version 13\n# Subtest: phone sender streams live frames into the OBS receiver page\nok 1 - phone sender streams live frames into the OBS receiver page\n  ---\n  duration_ms: 1019.869627\n  type: 'test'\n  ...\n1..1\n# tests 1\n# suites 0\n# pass 1\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 1536.156641\n"
+    },
+    {
+      "id": "shot-rx",
+      "desc": "Receiver renders live frame (visual proof)",
+      "kind": "artifact",
+      "artifact": "/tmp/obs-receiver.png"
+    },
+    {
+      "id": "shot-land",
+      "desc": "Landing QR + sender HUD proof",
+      "kind": "artifact",
+      "artifact": "/tmp/obs-landing.png"
+    },
+    {
+      "id": "manual-iphone",
+      "desc": "Physical iPhone camera + OBS render + Virtual Camera (docs/manual-tests/iphone-obs.md)",
+      "kind": "manual",
+      "evidence": "Thomas-only leg (physical iPhone camera + OBS GUI). Runnable 7-step handoff written: docs/manual-tests/iphone-obs.md. Everything automatable (signaling/offer/answer/ICE/live-frames/connected) covered by npm test."
+    }
+  ],
+  "_gate": {},
+  "completed": "2026-07-07T19:52:22.877369+00:00"
+}
