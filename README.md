@@ -42,7 +42,7 @@ The phone's HUD lets you flip front/back camera, pick a resolution, and toggle t
 
 ## Certificate
 
-By default the server generates a self-signed cert, so Safari shows a one-time warning you tap through. For a clean, warning-free cert install [mkcert](https://github.com/FiloSottile/mkcert):
+By default the server generates a self-signed cert, so Safari shows a one-time warning you tap through. To make the warning disappear for good, install [mkcert](https://github.com/FiloSottile/mkcert) once — the Windows launcher then auto-runs `mkcert -install` and mints a trusted cert on next start. Manual equivalent:
 
 ```bash
 mkcert -install
