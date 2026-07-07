@@ -45,14 +45,27 @@ function loadTls() {
   return { key: pems.private, cert: pems.cert, source: "self-signed (tap through the browser warning once)" };
 }
 
+// Rank an interface by how likely the phone can actually reach it.
+// Real Wi-Fi/Ethernet first; Tailscale/WSL/Hyper-V/virtual/loopback last —
+// the phone on the same Wi-Fi can't route to a 100.x Tailscale or 172.x WSL IP.
+function ifaceRank(name, ip) {
+  const n = name.toLowerCase();
+  if (/vethernet|wsl|tailscale|virtual|loopback|bluetooth|vmware|vbox|docker/.test(n)) return 3;
+  if (/^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(ip)) return 3; // Tailscale CGNAT 100.64/10
+  if (/wi-?fi|wlan|wireless/.test(n)) return 0;
+  if (/ethernet|^en|^eth/.test(n)) return 1;
+  return 2;
+}
+
 function lanIps() {
-  const out = [];
-  for (const addrs of Object.values(os.networkInterfaces())) {
+  const entries = [];
+  for (const [name, addrs] of Object.entries(os.networkInterfaces())) {
     for (const a of addrs || []) {
-      if (a.family === "IPv4" && !a.internal) out.push(a.address);
+      if (a.family === "IPv4" && !a.internal) entries.push({ ip: a.address, rank: ifaceRank(name, a.address) });
     }
   }
-  return out;
+  entries.sort((x, y) => x.rank - y.rank);
+  return entries.map((e) => e.ip);
 }
 
 const MIME = {

@@ -16,6 +16,8 @@
         <img id="qr" alt="QR code to open the sender page" width="240" height="240" />
         <p class="mono" id="senderUrl">…</p>
         <p class="note">Safari will warn about the certificate the first time. Tap “Show details” → “visit this website”, then allow camera access.</p>
+        <p class="note" id="alts" hidden>If the QR doesn’t connect, your phone may need a different address. Try these on the phone instead:</p>
+        <ul class="mono" id="altList"></ul>
       </section>
 
       <section class="card">
@@ -37,6 +39,14 @@
         const obsEl = document.getElementById("obsUrl");
         obsEl.textContent = obsUrl;
         obsEl.onclick = () => navigator.clipboard?.writeText(obsUrl);
+        // Fallback IPs (interface ranking is a best guess on multi-network laptops)
+        const others = ips.slice(1);
+        if (others.length) {
+          document.getElementById("alts").hidden = false;
+          document.getElementById("altList").innerHTML = others
+            .map((x) => `<li>https://${x}:${port}/sender.html</li>`)
+            .join("");
+        }
       })();
     </script>
   </body>
