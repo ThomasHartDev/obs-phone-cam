@@ -8,7 +8,9 @@ export class Signal extends EventTarget {
     this.connect();
   }
   connect() {
-    const url = `wss://${location.host}/ws?role=${this.role}`;
+    // ws:// when the page is served over http (OBS receiver), wss:// over https (phone).
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    const url = `${proto}://${location.host}/ws?role=${this.role}`;
     const ws = new WebSocket(url);
     this.ws = ws;
     ws.onopen = () => {
@@ -33,7 +35,8 @@ export class Signal extends EventTarget {
     ws.onerror = () => ws.close();
   }
   send(obj) {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(obj));
+    if (this.ws && this.ws.readyState === WebSocket.OPEN)
+      this.ws.send(JSON.stringify(obj));
   }
 }
 
