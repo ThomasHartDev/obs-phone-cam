@@ -9,38 +9,66 @@
   <body class="landing">
     <main>
       <h1>obs-phone-cam</h1>
-      <p class="sub">Your iPhone as an OBS camera source. Same Wi-Fi, no app to install.</p>
+      <p class="sub">
+        Your iPhone as an OBS camera source. Same Wi-Fi, no app to install.
+      </p>
 
       <section class="card">
         <h2>1. Scan on your iPhone</h2>
-        <img id="qr" alt="QR code to open the sender page" width="240" height="240" />
+        <img
+          id="qr"
+          alt="QR code to open the sender page"
+          width="240"
+          height="240"
+        />
         <p class="mono" id="senderUrl">…</p>
-        <p class="note">Safari will warn about the certificate the first time. Tap “Show details” → “visit this website”, then allow camera access.</p>
-        <p class="note" id="alts" hidden>If the QR doesn’t connect, your phone may need a different address. Try these on the phone instead:</p>
+        <p class="note">
+          Safari will warn about the certificate the first time. Tap “Show
+          details” → “visit this website”, then allow camera access.
+        </p>
+        <p class="note" id="alts" hidden>
+          If the QR doesn’t connect, your phone may need a different address.
+          Try these on the phone instead:
+        </p>
         <ul class="mono" id="altList"></ul>
       </section>
 
       <section class="card">
         <h2>2. Add to OBS</h2>
-        <p>In OBS: <strong>Sources → + → Browser</strong>, then set the URL to:</p>
+        <p>
+          In OBS: <strong>Sources → + → Browser</strong>, then set the URL to:
+        </p>
         <p class="mono copy" id="obsUrl" title="click to copy">…</p>
-        <p class="note">Set the Browser Source width/height to your canvas (e.g. 1920×1080).</p>
+        <p class="note">
+          Set the Browser Source width/height to your canvas (e.g. 1920×1080).
+        </p>
       </section>
 
       <section class="card">
         <h2>3. Use it as a camera device</h2>
-        <p>In OBS, right side under <strong>Controls</strong>, click <strong>Start Virtual Camera</strong>.</p>
-        <p class="note">Your phone now shows up as the camera named <strong>“OBS Virtual Camera”</strong> in Zoom, Teams, Discord, Chrome, or any app’s camera list. (OBS needs to stay open while you use it.)</p>
+        <p>
+          In OBS, right side under <strong>Controls</strong>, click
+          <strong>Start Virtual Camera</strong>.
+        </p>
+        <p class="note">
+          Your phone now shows up as the camera named
+          <strong>“OBS Virtual Camera”</strong> in Zoom, Teams, Discord, Chrome,
+          or any app’s camera list. (OBS needs to stay open while you use it.)
+        </p>
       </section>
     </main>
 
     <script>
       (async () => {
-        const { ips, port } = await fetch("/lan.json").then((r) => r.json());
+        const { ips, port, httpPort } = await fetch("/lan.json").then((r) =>
+          r.json(),
+        );
         const ip = ips[0] || location.hostname;
         const senderUrl = `https://${ip}:${port}/sender.html`;
-        const obsUrl = `https://localhost:${port}/receiver.html`;
-        document.getElementById("qr").src = "/qr?url=" + encodeURIComponent(senderUrl);
+        // OBS loads over plain http (its CEF browser won't accept the self-signed https cert)
+        const obsUrl = `http://localhost:${httpPort}/receiver.html`;
+        document.getElementById("qr").src =
+          "/qr?url=" + encodeURIComponent(senderUrl);
         document.getElementById("senderUrl").textContent = senderUrl;
         const obsEl = document.getElementById("obsUrl");
         obsEl.textContent = obsUrl;

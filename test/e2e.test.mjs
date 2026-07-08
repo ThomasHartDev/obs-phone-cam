@@ -11,15 +11,22 @@ import { chromium } from "playwright";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
 const PORT = 8788;
-const BASE = `https://localhost:${PORT}`;
+const HTTPS_BASE = `https://localhost:${PORT}`;
+const HTTP_BASE = `http://localhost:${PORT + 1}`;
 
 let server;
 let browser;
 
 before(async () => {
-  server = spawn("node", ["server.mjs"], { cwd: ROOT, env: { ...process.env, PORT: String(PORT), OBS_NO_OPEN: "1" } });
+  server = spawn("node", ["server.mjs"], {
+    cwd: ROOT,
+    env: { ...process.env, PORT: String(PORT), OBS_NO_OPEN: "1" },
+  });
   await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("server did not start")), 10000);
+    const timer = setTimeout(
+      () => reject(new Error("server did not start")),
+      10000,
+    );
     server.stdout.on("data", (d) => {
       if (d.toString().includes("is running")) {
         clearTimeout(timer);
@@ -46,13 +53,13 @@ after(async () => {
 test("phone sender streams live frames into the OBS receiver page", async () => {
   const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
 
-  // OBS Browser Source loads first and waits.
+  // OBS Browser Source loads the receiver over plain http (its real-world path).
   const receiver = await ctx.newPage();
-  await receiver.goto(`${BASE}/receiver.html`);
+  await receiver.goto(`${HTTP_BASE}/receiver.html`);
 
-  // Phone opens the sender page; fake camera auto-grants.
+  // Phone opens the sender page over https; fake camera auto-grants.
   const sender = await ctx.newPage();
-  await sender.goto(`${BASE}/sender.html`);
+  await sender.goto(`${HTTPS_BASE}/sender.html`);
 
   // The receiver's <video> should get a live track with real dimensions.
   await receiver.waitForFunction(
@@ -65,10 +72,21 @@ test("phone sender streams live frames into the OBS receiver page", async () => 
 
   const dims = await receiver.evaluate(() => {
     const v = document.getElementById("feed");
-    return { w: v.videoWidth, h: v.videoHeight, hidden: document.getElementById("hint").classList.contains("hidden") };
+    return {
+      w: v.videoWidth,
+      h: v.videoHeight,
+      hidden: document.getElementById("hint").classList.contains("hidden"),
+    };
   });
-  assert.ok(dims.w > 0 && dims.h > 0, `expected real frame dimensions, got ${dims.w}x${dims.h}`);
-  assert.equal(dims.hidden, true, "waiting hint should be hidden once frames arrive");
+  assert.ok(
+    dims.w > 0 && dims.h > 0,
+    `expected real frame dimensions, got ${dims.w}x${dims.h}`,
+  );
+  assert.equal(
+    dims.hidden,
+    true,
+    "waiting hint should be hidden once frames arrive",
+  );
 
   // Confirm the peer connection actually reached "connected", not just a stale srcObject.
   const state = await sender.evaluate(async () => {
@@ -85,7 +103,11 @@ test("phone sender streams live frames into the OBS receiver page", async () => 
       }, 8000);
     });
   });
-  assert.equal(state, "connected", `sender never reported Live, last status: ${state}`);
+  assert.equal(
+    state,
+    "connected",
+    `sender never reported Live, last status: ${state}`,
+  );
 
   await ctx.close();
 });

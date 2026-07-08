@@ -26,7 +26,11 @@ function loadTls() {
   const key = path.join(CERT_DIR, "key.pem");
   const cert = path.join(CERT_DIR, "cert.pem");
   if (fs.existsSync(key) && fs.existsSync(cert)) {
-    return { key: fs.readFileSync(key), cert: fs.readFileSync(cert), source: "certs/ (mkcert or provided)" };
+    return {
+      key: fs.readFileSync(key),
+      cert: fs.readFileSync(cert),
+      source: "certs/ (mkcert or provided)",
+    };
   }
   // Generate a self-signed cert covering localhost + every LAN IP so the phone can trust-on-first-use.
   const altNames = [
@@ -34,15 +38,22 @@ function loadTls() {
     { type: 7, ip: "127.0.0.1" },
     ...lanIps().map((ip) => ({ type: 7, ip })),
   ];
-  const pems = selfsigned.generate([{ name: "commonName", value: "obs-phone-cam" }], {
-    days: 3650,
-    keySize: 2048,
-    extensions: [{ name: "subjectAltName", altNames }],
-  });
+  const pems = selfsigned.generate(
+    [{ name: "commonName", value: "obs-phone-cam" }],
+    {
+      days: 3650,
+      keySize: 2048,
+      extensions: [{ name: "subjectAltName", altNames }],
+    },
+  );
   fs.mkdirSync(CERT_DIR, { recursive: true });
   fs.writeFileSync(key, pems.private);
   fs.writeFileSync(cert, pems.cert);
-  return { key: pems.private, cert: pems.cert, source: "self-signed (tap through the browser warning once)" };
+  return {
+    key: pems.private,
+    cert: pems.cert,
+    source: "self-signed (tap through the browser warning once)",
+  };
 }
 
 // Rank an interface by how likely the phone can actually reach it.
@@ -50,7 +61,12 @@ function loadTls() {
 // the phone on the same Wi-Fi can't route to a 100.x Tailscale or 172.x WSL IP.
 function ifaceRank(name, ip) {
   const n = name.toLowerCase();
-  if (/vethernet|wsl|tailscale|virtual|loopback|bluetooth|vmware|vbox|docker/.test(n)) return 3;
+  if (
+    /vethernet|wsl|tailscale|virtual|loopback|bluetooth|vmware|vbox|docker/.test(
+      n,
+    )
+  )
+    return 3;
   if (/^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(ip)) return 3; // Tailscale CGNAT 100.64/10
   if (/wi-?fi|wlan|wireless/.test(n)) return 0;
   if (/ethernet|^en|^eth/.test(n)) return 1;
@@ -61,7 +77,8 @@ function lanIps() {
   const entries = [];
   for (const [name, addrs] of Object.entries(os.networkInterfaces())) {
     for (const a of addrs || []) {
-      if (a.family === "IPv4" && !a.internal) entries.push({ ip: a.address, rank: ifaceRank(name, a.address) });
+      if (a.family === "IPv4" && !a.internal)
+        entries.push({ ip: a.address, rank: ifaceRank(name, a.address) });
     }
   }
   entries.sort((x, y) => x.rank - y.rank);
@@ -93,7 +110,12 @@ function serveStatic(req, res) {
       res.writeHead(404, { "content-type": "text/plain" }).end("not found");
       return;
     }
-    res.writeHead(200, { "content-type": MIME[path.extname(filePath)] || "application/octet-stream" }).end(data);
+    res
+      .writeHead(200, {
+        "content-type":
+          MIME[path.extname(filePath)] || "application/octet-stream",
+      })
+      .end(data);
   });
 }
 
@@ -111,19 +133,18 @@ async function handleRequest(req, res) {
     return;
   }
   if (url.pathname === "/lan.json") {
-    res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ips: lanIps(), port: PORT }));
+    res
+      .writeHead(200, { "content-type": "application/json" })
+      .end(JSON.stringify({ ips: lanIps(), port: PORT, httpPort: HTTP_PORT }));
     return;
   }
   serveStatic(req, res);
 }
 
+const HTTP_PORT = PORT + 1;
 const tls = loadTls();
-const server = https.createServer({ key: tls.key, cert: tls.cert }, (req, res) => {
-  handleRequest(req, res).catch(() => res.writeHead(500).end("error"));
-});
 
 // --- Signaling: relay offer/answer/ICE between the two roles in a single room. ---
-const wss = new WebSocketServer({ server, path: "/ws" });
 /** @type {Record<string, import('ws').WebSocket|null>} */
 const peers = { sender: null, receiver: null };
 
@@ -134,12 +155,14 @@ function notifyPresence() {
   for (const role of ["sender", "receiver"]) {
     const sock = peers[role];
     if (sock && sock.readyState === sock.OPEN) {
-      sock.send(JSON.stringify({ type: "peer", present: !!peers[otherRole(role)] }));
+      sock.send(
+        JSON.stringify({ type: "peer", present: !!peers[otherRole(role)] }),
+      );
     }
   }
 }
 
-wss.on("connection", (ws, req) => {
+function handleWs(ws, req) {
   const url = new URL(req.url, "https://x");
   const role = url.searchParams.get("role");
   if (role !== "sender" && role !== "receiver") {
@@ -159,7 +182,8 @@ wss.on("connection", (ws, req) => {
   ws.on("message", (data) => {
     // Blind relay of signaling payloads to the other role.
     const target = peers[otherRole(role)];
-    if (target && target.readyState === target.OPEN) target.send(data.toString());
+    if (target && target.readyState === target.OPEN)
+      target.send(data.toString());
   });
 
   ws.on("close", () => {
@@ -168,38 +192,59 @@ wss.on("connection", (ws, req) => {
     notifyPresence();
   });
   ws.on("error", () => {});
-});
+}
 
-server.listen(PORT, "0.0.0.0", () => {
+function makeRequestHandler(req, res) {
+  handleRequest(req, res).catch(() => res.writeHead(500).end("error"));
+}
+
+// HTTPS for the phone: iOS Safari needs a secure context on a LAN IP to grant the camera.
+const httpsServer = https.createServer(
+  { key: tls.key, cert: tls.cert },
+  makeRequestHandler,
+);
+new WebSocketServer({ server: httpsServer, path: "/ws" }).on(
+  "connection",
+  handleWs,
+);
+
+// Plain HTTP for OBS: its CEF Browser Source silently refuses a self-signed cert (no prompt),
+// which renders black. The receiver page uses no camera, and http://localhost is a secure
+// context by spec, so OBS loads it over http with zero cert friction.
+const httpServer = http.createServer(makeRequestHandler);
+new WebSocketServer({ server: httpServer, path: "/ws" }).on(
+  "connection",
+  handleWs,
+);
+
+httpsServer.listen(PORT, "0.0.0.0", () => {
   const ips = lanIps();
-  const primary = ips[0] || "localhost";
   console.log("\n  obs-phone-cam is running.");
   console.log(`  TLS: ${tls.source}\n`);
   console.log("  On the laptop, open this to get the QR code + OBS URL:");
   console.log(`    https://localhost:${PORT}/\n`);
   console.log("  On the iPhone (same Wi-Fi), open the sender page:");
   for (const ip of ips) console.log(`    https://${ip}:${PORT}/sender.html`);
-  console.log("\n  In OBS: add a Browser Source pointing at:");
-  console.log(`    https://localhost:${PORT}/receiver.html`);
-  console.log(`    (or https://${primary}:${PORT}/receiver.html)\n`);
+  console.log(
+    "\n  In OBS: add a Browser Source pointing at (plain http — no cert warning):",
+  );
+  console.log(`    http://localhost:${HTTP_PORT}/receiver.html\n`);
   openBrowser(`https://localhost:${PORT}/`);
 });
+httpServer.listen(HTTP_PORT, "0.0.0.0", () => {});
 
 // Pop the QR/landing page in the default browser so the user never touches a URL.
 // Skipped in tests/CI via OBS_NO_OPEN.
 function openBrowser(url) {
   if (process.env.OBS_NO_OPEN) return;
   try {
-    if (process.platform === "win32") spawn("cmd", ["/c", "start", "", url], { detached: true, stdio: "ignore" }).unref();
-    else if (process.platform === "darwin") spawn("open", [url], { detached: true, stdio: "ignore" }).unref();
+    if (process.platform === "win32")
+      spawn("cmd", ["/c", "start", "", url], {
+        detached: true,
+        stdio: "ignore",
+      }).unref();
+    else if (process.platform === "darwin")
+      spawn("open", [url], { detached: true, stdio: "ignore" }).unref();
     else spawn("xdg-open", [url], { detached: true, stdio: "ignore" }).unref();
   } catch {}
 }
-
-// Also redirect plain HTTP → HTTPS so a mistyped http:// URL still lands.
-http
-  .createServer((req, res) => {
-    const host = (req.headers.host || "").replace(/:\d+$/, "");
-    res.writeHead(301, { location: `https://${host}:${PORT}${req.url}` }).end();
-  })
-  .listen(PORT + 1, "0.0.0.0", () => {});
