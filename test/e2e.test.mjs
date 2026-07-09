@@ -154,3 +154,47 @@ test("a second sender tab supersedes the first without a reconnect war", async (
 
   await ctx.close();
 });
+
+test("Rotate flips the frame the receiver gets from landscape to portrait", async () => {
+  const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
+  const receiver = await ctx.newPage();
+  await receiver.goto(`${HTTP_BASE}/receiver.html`);
+  const sender = await ctx.newPage();
+  await sender.goto(`${HTTPS_BASE}/sender.html`);
+
+  await receiver.waitForFunction(
+    () => {
+      const v = document.getElementById("feed");
+      return v && v.videoWidth > 0 && v.videoHeight > 0;
+    },
+    { timeout: 20000 },
+  );
+  const before = await receiver.evaluate(() => {
+    const v = document.getElementById("feed");
+    return { w: v.videoWidth, h: v.videoHeight };
+  });
+  assert.ok(
+    before.w > before.h,
+    `expected landscape first, got ${before.w}x${before.h}`,
+  );
+
+  // One Rotate tap rotates the sent canvas 90°, which must swap the receiver's dims.
+  await sender.click("#rotate");
+  await receiver.waitForFunction(
+    () => {
+      const v = document.getElementById("feed");
+      return v.videoHeight > v.videoWidth;
+    },
+    { timeout: 8000 },
+  );
+  const after = await receiver.evaluate(() => {
+    const v = document.getElementById("feed");
+    return { w: v.videoWidth, h: v.videoHeight };
+  });
+  assert.ok(
+    after.h > after.w,
+    `expected portrait after Rotate, got ${after.w}x${after.h}`,
+  );
+
+  await ctx.close();
+});
