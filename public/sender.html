@@ -2,7 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
     <title>Phone Cam — Sender</title>
     <link rel="stylesheet" href="/style.css" />
   </head>
@@ -18,7 +21,9 @@
           <option value="1920x1080" selected>1080p</option>
           <option value="3840x2160">4K</option>
         </select>
-        <label class="mic"><input id="mic" type="checkbox" checked /> Mic</label>
+        <label class="mic"
+          ><input id="mic" type="checkbox" checked /> Mic</label
+        >
       </div>
     </div>
 
@@ -44,7 +49,11 @@
       async function getCamera() {
         const [w, h] = resSel.value.split("x").map(Number);
         const constraints = {
-          video: { facingMode: { ideal: facing }, width: { ideal: w }, height: { ideal: h } },
+          video: {
+            facingMode: { ideal: facing },
+            width: { ideal: w },
+            height: { ideal: h },
+          },
           audio: micBox.checked,
         };
         if (stream) stream.getTracks().forEach((t) => t.stop());
@@ -63,7 +72,8 @@
           const s = pc.connectionState;
           if (s === "connected") setStatus("Live in OBS ●", "live");
           else if (s === "connecting") setStatus("Connecting…");
-          else if (s === "failed" || s === "disconnected") setStatus("Reconnecting…", "warn");
+          else if (s === "failed" || s === "disconnected")
+            setStatus("Reconnecting…", "warn");
         };
       }
 
@@ -77,6 +87,12 @@
       }
 
       const sig = new Signal("sender");
+      sig.addEventListener("superseded", () => {
+        // Another sender tab took over the single sender slot.
+        if (stream) stream.getTracks().forEach((t) => t.stop());
+        if (pc) pc.close();
+        setStatus("Another tab is using the camera — close this one.", "warn");
+      });
       sig.addEventListener("msg", async ({ detail: msg }) => {
         if (msg.type === "peer") {
           peerPresent = msg.present;
