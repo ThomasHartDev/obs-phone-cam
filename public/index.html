@@ -38,9 +38,11 @@
         <p>
           In OBS: <strong>Sources → + → Browser</strong>, then set the URL to:
         </p>
-        <p class="mono copy" id="obsUrl" title="click to copy">…</p>
+        <p class="mono" id="obsUrl">…</p>
+        <button id="copyObs" type="button" class="copybtn">Copy OBS URL</button>
         <p class="note">
           Set the Browser Source width/height to your canvas (e.g. 1920×1080).
+          The URL is plain <strong>http</strong> (OBS can’t open the https one).
         </p>
       </section>
 
@@ -70,9 +72,13 @@
         document.getElementById("qr").src =
           "/qr?url=" + encodeURIComponent(senderUrl);
         document.getElementById("senderUrl").textContent = senderUrl;
-        const obsEl = document.getElementById("obsUrl");
-        obsEl.textContent = obsUrl;
-        obsEl.onclick = () => navigator.clipboard?.writeText(obsUrl);
+        document.getElementById("obsUrl").textContent = obsUrl;
+        const copyBtn = document.getElementById("copyObs");
+        copyBtn.onclick = async () => {
+          await navigator.clipboard?.writeText(obsUrl);
+          copyBtn.textContent = "Copied ✓";
+          setTimeout(() => (copyBtn.textContent = "Copy OBS URL"), 1500);
+        };
         // Fallback IPs (interface ranking is a best guess on multi-network laptops)
         const others = ips.slice(1);
         if (others.length) {
