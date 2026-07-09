@@ -111,3 +111,46 @@ test("phone sender streams live frames into the OBS receiver page", async () => 
 
   await ctx.close();
 });
+
+test("a second sender tab supersedes the first without a reconnect war", async () => {
+  const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
+  const receiver = await ctx.newPage();
+  await receiver.goto(`${HTTP_BASE}/receiver.html`);
+
+  // Two sender tabs open (the exact repro: sender page in two Safari tabs),
+  // a beat apart like a real second tab.
+  const senderA = await ctx.newPage();
+  await senderA.goto(`${HTTPS_BASE}/sender.html`);
+  await senderA.waitForTimeout(1500);
+  const senderB = await ctx.newPage();
+  await senderB.goto(`${HTTPS_BASE}/sender.html`);
+
+  // The newer tab (B) wins the single sender slot; the older (A) is told it was
+  // superseded and must NOT keep reconnecting.
+  await senderA.waitForFunction(
+    () => document.getElementById("status").textContent.includes("Another tab"),
+    { timeout: 10000 },
+  );
+
+  // Give any reconnect war time to manifest, then assert A stayed superseded
+  // (a war would flip A back to a connecting/live state).
+  await senderA.waitForTimeout(3000);
+  const aStatus = await senderA.evaluate(
+    () => document.getElementById("status").textContent,
+  );
+  assert.ok(
+    aStatus.includes("Another tab"),
+    `superseded tab should stay parked, got: ${aStatus}`,
+  );
+
+  // The winning tab still delivers live frames to the receiver.
+  await receiver.waitForFunction(
+    () => {
+      const v = document.getElementById("feed");
+      return v && v.srcObject && v.videoWidth > 0;
+    },
+    { timeout: 20000 },
+  );
+
+  await ctx.close();
+});

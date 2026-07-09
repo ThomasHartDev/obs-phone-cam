@@ -26,9 +26,16 @@ export class Signal extends EventTarget {
       }
       this.dispatchEvent(new CustomEvent("msg", { detail: msg }));
     };
-    ws.onclose = () => {
+    ws.onclose = (e) => {
       this.dispatchEvent(new Event("close"));
-      // auto-reconnect with backoff so a laptop/OBS restart heals itself
+      // The server closes us with 1000 when a newer client of the same role takes
+      // over (e.g. a second sender tab). Do NOT reconnect then — reconnecting starts
+      // a connect/disconnect war between two tabs. Only auto-heal on abnormal drops
+      // (server/OBS restart, network blip) so those still recover.
+      if (e && e.code === 1000) {
+        this.dispatchEvent(new CustomEvent("superseded"));
+        return;
+      }
       setTimeout(() => this.connect(), this.reconnectMs);
       this.reconnectMs = Math.min(this.reconnectMs * 2, 5000);
     };
