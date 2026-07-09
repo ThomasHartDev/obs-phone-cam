@@ -15,6 +15,7 @@
     <div class="hud">
       <div id="status" class="status">Starting camera…</div>
       <div class="controls">
+        <button id="orient" type="button">Portrait</button>
         <button id="flip" type="button">Flip camera</button>
         <select id="res" aria-label="Resolution">
           <option value="1280x720">720p</option>
@@ -33,10 +34,12 @@
       const preview = document.getElementById("preview");
       const statusEl = document.getElementById("status");
       const flipBtn = document.getElementById("flip");
+      const orientBtn = document.getElementById("orient");
       const resSel = document.getElementById("res");
       const micBox = document.getElementById("mic");
 
       let facing = "environment"; // back camera by default — better for OBS scenes
+      let portrait = true; // vertical 9:16 default — most short-form is IG/TikTok
       let stream = null;
       let pc = null;
       let peerPresent = false;
@@ -47,7 +50,12 @@
       };
 
       async function getCamera() {
-        const [w, h] = resSel.value.split("x").map(Number);
+        // res is stored as long×short; swap to short×long for a portrait (9:16) frame.
+        const dims = resSel.value.split("x").map(Number);
+        const long = Math.max(...dims),
+          short = Math.min(...dims);
+        const w = portrait ? short : long;
+        const h = portrait ? long : short;
         const constraints = {
           video: {
             facingMode: { ideal: facing },
@@ -107,6 +115,12 @@
         }
       });
 
+      orientBtn.onclick = async () => {
+        portrait = !portrait;
+        orientBtn.textContent = portrait ? "Portrait" : "Landscape";
+        await getCamera();
+        offer();
+      };
       flipBtn.onclick = async () => {
         facing = facing === "environment" ? "user" : "environment";
         await getCamera();
