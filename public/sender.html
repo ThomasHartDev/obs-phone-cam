@@ -10,12 +10,14 @@
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body class="sender">
-    <video id="preview" playsinline autoplay muted></video>
+    <!-- raw camera (hidden) is drawn, rotated, into the canvas we actually send -->
+    <video id="raw" playsinline autoplay muted hidden></video>
+    <canvas id="preview"></canvas>
 
     <div class="hud">
       <div id="status" class="status">Starting camera…</div>
       <div class="controls">
-        <button id="orient" type="button">Portrait</button>
+        <button id="rotate" type="button">Rotate</button>
         <button id="flip" type="button">Flip camera</button>
         <select id="res" aria-label="Resolution">
           <option value="1280x720">720p</option>
@@ -31,16 +33,20 @@
     <script type="module">
       import { Signal, RTC_CONFIG } from "/signal.js";
 
-      const preview = document.getElementById("preview");
+      const raw = document.getElementById("raw");
+      const canvas = document.getElementById("preview");
+      const ctx = canvas.getContext("2d");
       const statusEl = document.getElementById("status");
       const flipBtn = document.getElementById("flip");
-      const orientBtn = document.getElementById("orient");
+      const rotateBtn = document.getElementById("rotate");
       const resSel = document.getElementById("res");
       const micBox = document.getElementById("mic");
 
       let facing = "environment"; // back camera by default — better for OBS scenes
-      let portrait = true; // vertical 9:16 default — most short-form is IG/TikTok
-      let stream = null;
+      let rotationOffset = 0; // manual 90° correction if auto guesses the wrong way
+      let rawStream = null;
+      let outStream = null; // the rotated canvas stream we send
+      let drawing = false;
       let pc = null;
       let peerPresent = false;
 
@@ -49,30 +55,74 @@
         statusEl.className = "status " + cls;
       };
 
+      // iOS getUserMedia always hands out the landscape sensor frame and ignores a
+      // portrait request. So we take that landscape frame and rotate it to match how
+      // the phone is held: upright -> portrait, turned sideways -> landscape.
+      function deviceIsPortrait() {
+        if (screen.orientation && screen.orientation.type)
+          return screen.orientation.type.startsWith("portrait");
+        if (typeof window.orientation === "number")
+          return window.orientation === 0 || window.orientation === 180;
+        return window.innerHeight >= window.innerWidth;
+      }
+      function effectiveRotation() {
+        const base = deviceIsPortrait() ? 90 : 0; // rotate the landscape sensor upright
+        return (base + rotationOffset) % 360;
+      }
+
+      function drawFrame() {
+        if (!drawing) return;
+        const vw = raw.videoWidth,
+          vh = raw.videoHeight;
+        if (vw && vh) {
+          const ang = effectiveRotation();
+          // a 90/270° rotation swaps the output's width and height
+          const [cw, ch] = ang % 180 === 0 ? [vw, vh] : [vh, vw];
+          if (canvas.width !== cw) canvas.width = cw;
+          if (canvas.height !== ch) canvas.height = ch;
+          ctx.save();
+          ctx.translate(canvas.width / 2, canvas.height / 2);
+          ctx.rotate((ang * Math.PI) / 180);
+          ctx.drawImage(raw, -vw / 2, -vh / 2, vw, vh);
+          ctx.restore();
+        }
+        requestAnimationFrame(drawFrame);
+      }
+
       async function getCamera() {
-        // res is stored as long×short; swap to short×long for a portrait (9:16) frame.
+        // Always ask the sensor for landscape (what iOS actually delivers); rotation
+        // happens in the canvas, so the requested orientation here doesn't matter.
         const dims = resSel.value.split("x").map(Number);
         const long = Math.max(...dims),
           short = Math.min(...dims);
-        const w = portrait ? short : long;
-        const h = portrait ? long : short;
         const constraints = {
           video: {
             facingMode: { ideal: facing },
-            width: { ideal: w },
-            height: { ideal: h },
+            width: { ideal: long },
+            height: { ideal: short },
           },
           audio: micBox.checked,
         };
-        if (stream) stream.getTracks().forEach((t) => t.stop());
-        stream = await navigator.mediaDevices.getUserMedia(constraints);
-        preview.srcObject = stream;
+        if (rawStream) rawStream.getTracks().forEach((t) => t.stop());
+        rawStream = await navigator.mediaDevices.getUserMedia(constraints);
+        raw.srcObject = rawStream;
+        await raw.play().catch(() => {});
+        if (!drawing) {
+          drawing = true;
+          drawFrame();
+        }
+        if (!outStream) outStream = canvas.captureStream(30);
+      }
+
+      function sendTracks() {
+        // rotated canvas video + the real mic audio
+        return [...outStream.getVideoTracks(), ...rawStream.getAudioTracks()];
       }
 
       function buildPeer() {
         if (pc) pc.close();
         pc = new RTCPeerConnection(RTC_CONFIG);
-        for (const track of stream.getTracks()) pc.addTrack(track, stream);
+        for (const t of sendTracks()) pc.addTrack(t, outStream);
         pc.onicecandidate = (e) => {
           if (e.candidate) sig.send({ type: "ice", candidate: e.candidate });
         };
@@ -86,7 +136,7 @@
       }
 
       async function offer() {
-        if (!stream || !peerPresent) return;
+        if (!outStream || !rawStream || !peerPresent) return;
         buildPeer();
         const desc = await pc.createOffer();
         await pc.setLocalDescription(desc);
@@ -96,8 +146,8 @@
 
       const sig = new Signal("sender");
       sig.addEventListener("superseded", () => {
-        // Another sender tab took over the single sender slot.
-        if (stream) stream.getTracks().forEach((t) => t.stop());
+        drawing = false;
+        if (rawStream) rawStream.getTracks().forEach((t) => t.stop());
         if (pc) pc.close();
         setStatus("Another tab is using the camera — close this one.", "warn");
       });
@@ -115,11 +165,10 @@
         }
       });
 
-      orientBtn.onclick = async () => {
-        portrait = !portrait;
-        orientBtn.textContent = portrait ? "Portrait" : "Landscape";
-        await getCamera();
-        offer();
+      // Rotation and orientation change the canvas only — the sent track is the same
+      // captureStream object, so no renegotiation is needed and the feed never blips.
+      rotateBtn.onclick = () => {
+        rotationOffset = (rotationOffset + 90) % 360;
       };
       flipBtn.onclick = async () => {
         facing = facing === "environment" ? "user" : "environment";
@@ -139,8 +188,6 @@
         try {
           await getCamera();
           setStatus("Camera ready — waiting for OBS…", "warn");
-          // If OBS (the receiver) was already connected before the camera came up,
-          // the "peer present" signal already fired — kick off the offer now.
           if (peerPresent) offer();
         } catch (err) {
           setStatus("Camera blocked: " + err.message, "warn");
