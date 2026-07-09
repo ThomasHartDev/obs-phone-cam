@@ -198,24 +198,50 @@ function makeRequestHandler(req, res) {
   handleRequest(req, res).catch(() => res.writeHead(500).end("error"));
 }
 
+// A port clash (usually a Phone Cam window already open) should read as a plain
+// message, not a raw node stack trace.
+let handledListenError = false;
+function onListenError(err, port) {
+  if (handledListenError) return;
+  handledListenError = true;
+  if (err && err.code === "EADDRINUSE") {
+    console.error(
+      `\n  Phone Cam looks like it's already running (port ${port} is in use).`,
+    );
+    console.error(
+      "  Close the other Phone Cam window first, then start it again.\n",
+    );
+  } else {
+    console.error(
+      "\n  Phone Cam couldn't start:",
+      err && err.message ? err.message : err,
+      "\n",
+    );
+  }
+  process.exit(1);
+}
+
 // HTTPS for the phone: iOS Safari needs a secure context on a LAN IP to grant the camera.
 const httpsServer = https.createServer(
   { key: tls.key, cert: tls.cert },
   makeRequestHandler,
 );
-new WebSocketServer({ server: httpsServer, path: "/ws" }).on(
-  "connection",
-  handleWs,
-);
+const httpsWss = new WebSocketServer({ server: httpsServer, path: "/ws" });
+httpsWss.on("connection", handleWs);
 
 // Plain HTTP for OBS: its CEF Browser Source silently refuses a self-signed cert (no prompt),
 // which renders black. The receiver page uses no camera, and http://localhost is a secure
 // context by spec, so OBS loads it over http with zero cert friction.
 const httpServer = http.createServer(makeRequestHandler);
-new WebSocketServer({ server: httpServer, path: "/ws" }).on(
-  "connection",
-  handleWs,
-);
+const httpWss = new WebSocketServer({ server: httpServer, path: "/ws" });
+httpWss.on("connection", handleWs);
+
+// A failed listen (e.g. port in use) surfaces on both the server and the ws layer;
+// handle it in both places so it prints one friendly line instead of a raw stack.
+httpsServer.on("error", (e) => onListenError(e, PORT));
+httpServer.on("error", (e) => onListenError(e, HTTP_PORT));
+httpsWss.on("error", (e) => onListenError(e, PORT));
+httpWss.on("error", (e) => onListenError(e, HTTP_PORT));
 
 httpsServer.listen(PORT, "0.0.0.0", () => {
   const ips = lanIps();
