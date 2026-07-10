@@ -100,6 +100,7 @@
             facingMode: { ideal: facing },
             width: { ideal: long },
             height: { ideal: short },
+            frameRate: { ideal: 60 }, // smooth motion; phone gives 30 if it can't do 60
           },
           audio: micBox.checked,
         };
@@ -111,7 +112,40 @@
           drawing = true;
           drawFrame();
         }
-        if (!outStream) outStream = canvas.captureStream(30);
+        if (!outStream) {
+          outStream = canvas.captureStream(60);
+          // Tell the encoder to preserve per-frame sharpness over smoothness, so
+          // motion doesn't turn grainy.
+          outStream.getVideoTracks().forEach((t) => (t.contentHint = "detail"));
+        }
+      }
+
+      // WebRTC caps video around ~2.5 Mbps by default, which starves the encoder on
+      // movement and looks grainy. On a LAN we can push far more. Scale to resolution.
+      function targetBitrate() {
+        const v = resSel.value;
+        if (v.includes("3840")) return 40_000_000; // 4K
+        if (v.includes("1920")) return 14_000_000; // 1080p
+        return 7_000_000; // 720p
+      }
+      async function tuneSender() {
+        const s = pc
+          .getSenders()
+          .find((x) => x.track && x.track.kind === "video");
+        if (!s) return;
+        try {
+          const p = s.getParameters();
+          if (!p.encodings || !p.encodings.length) p.encodings = [{}];
+          p.encodings[0].maxBitrate = targetBitrate();
+          p.encodings[0].maxFramerate = 60;
+          p.degradationPreference = "maintain-resolution";
+          await s.setParameters(p);
+          // reflect the applied ceiling so it's inspectable (used by the e2e test)
+          const applied = s.getParameters().encodings?.[0]?.maxBitrate;
+          if (applied) document.body.dataset.maxBitrate = String(applied);
+        } catch {
+          /* older browsers: bitrate stays at default, still works */
+        }
       }
 
       function sendTracks() {
@@ -123,6 +157,7 @@
         if (pc) pc.close();
         pc = new RTCPeerConnection(RTC_CONFIG);
         for (const t of sendTracks()) pc.addTrack(t, outStream);
+        tuneSender();
         pc.onicecandidate = (e) => {
           if (e.candidate) sig.send({ type: "ice", candidate: e.candidate });
         };

@@ -198,3 +198,25 @@ test("Rotate flips the frame the receiver gets from landscape to portrait", asyn
 
   await ctx.close();
 });
+
+test("sender raises the encode bitrate well above the WebRTC default", async () => {
+  const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
+  const receiver = await ctx.newPage();
+  await receiver.goto(`${HTTP_BASE}/receiver.html`);
+  const sender = await ctx.newPage();
+  await sender.goto(`${HTTPS_BASE}/sender.html`);
+
+  await sender.waitForFunction(() => !!document.body.dataset.maxBitrate, {
+    timeout: 20000,
+  });
+  const bitrate = await sender.evaluate(() =>
+    Number(document.body.dataset.maxBitrate),
+  );
+  // Default WebRTC caps ~2.5 Mbps; 1080p should be lifted to 14 Mbps.
+  assert.ok(
+    bitrate >= 10_000_000,
+    `expected a raised bitrate ceiling, got ${bitrate}`,
+  );
+
+  await ctx.close();
+});
