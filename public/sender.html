@@ -16,7 +16,31 @@
 
     <div class="hud">
       <div id="status" class="status">Starting camera…</div>
+
+      <!-- filter settings: hidden until "Adjust" is tapped -->
+      <div id="panel" class="panel" hidden>
+        <div class="presets" id="presets"></div>
+        <div class="sliders">
+          <label>Exposure<input type="range" data-p="exposure" min="-1" max="1" step="0.01" /></label>
+          <label>Temp<input type="range" data-p="temp" min="-1" max="1" step="0.01" /></label>
+          <label>Tint<input type="range" data-p="tint" min="-1" max="1" step="0.01" /></label>
+          <label>Contrast<input type="range" data-p="contrast" min="0.7" max="1.4" step="0.01" /></label>
+          <label>Saturation<input type="range" data-p="saturation" min="0" max="2" step="0.01" /></label>
+          <label>Skin warmth<input type="range" data-p="skin" min="0" max="0.3" step="0.005" /></label>
+          <label>Lens fix<input type="range" data-p="lens" min="-0.4" max="0.4" step="0.01" /></label>
+          <label>Zoom<input type="range" data-p="zoom" min="1" max="2" step="0.01" /></label>
+          <label>Soften<input type="range" data-p="soften" min="0" max="1" step="0.01" /></label>
+        </div>
+        <div class="toggles">
+          <label><input id="mirror" type="checkbox" /> Mirror</label>
+          <label><input id="calib" type="checkbox" /> Calibrate (raw | you)</label>
+          <button id="reset" type="button">Reset</button>
+        </div>
+      </div>
+
       <div class="controls">
+        <button id="adjust" type="button" aria-pressed="false">Adjust</button>
+        <button id="ab" type="button" title="hold to compare raw">A/B</button>
         <button id="rotate" type="button">Rotate</button>
         <button id="flip" type="button">Flip camera</button>
         <select id="res" aria-label="Resolution">
@@ -32,10 +56,11 @@
 
     <script type="module">
       import { Signal, RTC_CONFIG } from "/signal.js";
+      import { CameraFilter, DEFAULT_PARAMS, PRESETS } from "/filters.js";
 
       const raw = document.getElementById("raw");
       const canvas = document.getElementById("preview");
-      const ctx = canvas.getContext("2d");
+      const filter = new CameraFilter(canvas);
       const statusEl = document.getElementById("status");
       const flipBtn = document.getElementById("flip");
       const rotateBtn = document.getElementById("rotate");
@@ -44,6 +69,30 @@
 
       let facing = "environment"; // back camera by default — better for OBS scenes
       let rotationOffset = 0; // manual 90° correction if auto guesses the wrong way
+
+      // Live filter params. Persisted so the phone remembers your look between
+      // sessions. A/B "hold" temporarily renders the raw frame for comparison.
+      const STORE = "obscam.params";
+      let params = loadParams();
+      let abHold = false;
+      function loadParams() {
+        try {
+          const saved = JSON.parse(localStorage.getItem(STORE) || "null");
+          if (saved) return { ...DEFAULT_PARAMS, ...saved };
+        } catch {}
+        return { ...PRESETS["True to Life"] };
+      }
+      function saveParams() {
+        try {
+          localStorage.setItem(STORE, JSON.stringify(params));
+        } catch {}
+      }
+      // what the shader actually renders this frame (A/B bypasses the grade)
+      function activeParams() {
+        if (!abHold) return params;
+        return { ...DEFAULT_PARAMS, mirror: params.mirror, lens: 0, zoom: 1 };
+      }
+
       let rawStream = null;
       let outStream = null; // the rotated canvas stream we send
       let drawing = false;
@@ -78,13 +127,8 @@
           const ang = effectiveRotation();
           // a 90/270° rotation swaps the output's width and height
           const [cw, ch] = ang % 180 === 0 ? [vw, vh] : [vh, vw];
-          if (canvas.width !== cw) canvas.width = cw;
-          if (canvas.height !== ch) canvas.height = ch;
-          ctx.save();
-          ctx.translate(canvas.width / 2, canvas.height / 2);
-          ctx.rotate((ang * Math.PI) / 180);
-          ctx.drawImage(raw, -vw / 2, -vh / 2, vw, vh);
-          ctx.restore();
+          filter.setSize(cw, ch);
+          filter.render(raw, ang, activeParams(), vw, vh);
         }
         requestAnimationFrame(drawFrame);
       }
@@ -218,6 +262,75 @@
         await getCamera();
         offer();
       };
+
+      // ---------- filter panel wiring ----------
+      const panel = document.getElementById("panel");
+      const adjustBtn = document.getElementById("adjust");
+      const abBtn = document.getElementById("ab");
+      const mirrorBox = document.getElementById("mirror");
+      const calibBox = document.getElementById("calib");
+      const resetBtn = document.getElementById("reset");
+      const sliders = [...panel.querySelectorAll("input[data-p]")];
+
+      // reflect the current params object onto every control
+      function syncUI() {
+        for (const el of sliders) el.value = params[el.dataset.p];
+        mirrorBox.checked = params.mirror;
+        calibBox.checked = params.calib;
+      }
+      function applyPreset(name) {
+        params = { ...PRESETS[name] };
+        syncUI();
+        saveParams();
+        markActivePreset(name);
+      }
+      function markActivePreset(name) {
+        for (const chip of presetsEl.children)
+          chip.classList.toggle("on", chip.textContent === name);
+      }
+
+      const presetsEl = document.getElementById("presets");
+      for (const name of Object.keys(PRESETS)) {
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.textContent = name;
+        chip.onclick = () => applyPreset(name);
+        presetsEl.appendChild(chip);
+      }
+
+      for (const el of sliders) {
+        el.oninput = () => {
+          params[el.dataset.p] = Number(el.value);
+          saveParams();
+          markActivePreset(""); // manual edit = no longer a named preset
+        };
+      }
+      mirrorBox.onchange = () => {
+        params.mirror = mirrorBox.checked;
+        saveParams();
+      };
+      calibBox.onchange = () => {
+        params.calib = calibBox.checked;
+        saveParams();
+      };
+      resetBtn.onclick = () => applyPreset("True to Life");
+      adjustBtn.onclick = () => {
+        const open = panel.hasAttribute("hidden");
+        panel.toggleAttribute("hidden", !open);
+        adjustBtn.setAttribute("aria-pressed", String(open));
+      };
+      // A/B: hold to peek the raw frame, release to return to your look
+      const abDown = () => {
+        abHold = true;
+      };
+      const abUp = () => {
+        abHold = false;
+      };
+      abBtn.addEventListener("pointerdown", abDown);
+      abBtn.addEventListener("pointerup", abUp);
+      abBtn.addEventListener("pointerleave", abUp);
+      abBtn.addEventListener("pointercancel", abUp);
+      syncUI();
 
       (async () => {
         try {
