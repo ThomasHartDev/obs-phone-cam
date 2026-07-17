@@ -199,6 +199,112 @@ test("Rotate flips the frame the receiver gets from landscape to portrait", asyn
   await ctx.close();
 });
 
+// --- filter pipeline ---
+// Read the mean RGB of a horizontal slice of the sent WebGL canvas by copying
+// it into a 2D canvas (preserveDrawingBuffer makes that reliable).
+async function readMean(page, x0f = 0, x1f = 1) {
+  return page.evaluate(
+    ({ x0f, x1f }) => {
+      const src = document.getElementById("preview");
+      const w = src.width,
+        h = src.height;
+      const c = document.createElement("canvas");
+      c.width = w;
+      c.height = h;
+      const cx = c.getContext("2d");
+      cx.drawImage(src, 0, 0);
+      const x0 = Math.floor(w * x0f);
+      const x1 = Math.max(x0 + 1, Math.floor(w * x1f));
+      const d = cx.getImageData(x0, 0, x1 - x0, h).data;
+      let r = 0,
+        g = 0,
+        b = 0,
+        n = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        r += d[i];
+        g += d[i + 1];
+        b += d[i + 2];
+        n++;
+      }
+      return [r / n, g / n, b / n];
+    },
+    { x0f, x1f },
+  );
+}
+const setParam = (page, p, v) =>
+  page.evaluate(
+    ({ p, v }) => {
+      const el = document.querySelector(`input[data-p="${p}"]`);
+      el.value = String(v);
+      el.dispatchEvent(new Event("input"));
+    },
+    { p, v },
+  );
+const spread = ([r, g, b]) => Math.abs(r - g) + Math.abs(g - b);
+const luma = ([r, g, b]) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+async function avg(fn, times = 6) {
+  let s = 0;
+  for (let i = 0; i < times; i++) {
+    s += await fn();
+    await new Promise((r) => setTimeout(r, 60));
+  }
+  return s / times;
+}
+
+test("the color grade actually alters the sent frame (and A/B bypasses it)", async () => {
+  const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
+  const sender = await ctx.newPage();
+  await sender.goto(`${HTTPS_BASE}/sender.html`);
+  await sender.waitForFunction(
+    () => document.getElementById("preview").width > 0,
+    { timeout: 20000 },
+  );
+
+  // Desaturate fully: the graded frame should be near-grayscale (r≈g≈b),
+  // independent of the moving test pattern's content.
+  await setParam(sender, "saturation", 0);
+  const gradedSpread = await avg(() => readMean(sender).then(spread));
+
+  // Hold A/B: renders the raw frame, which is colored -> much higher spread.
+  await sender.evaluate(() =>
+    document
+      .getElementById("ab")
+      .dispatchEvent(new Event("pointerdown", { bubbles: true })),
+  );
+  const rawSpread = await avg(() => readMean(sender).then(spread));
+
+  assert.ok(
+    gradedSpread < 6,
+    `desaturated grade should be near-grayscale, got spread ${gradedSpread.toFixed(2)}`,
+  );
+  assert.ok(
+    rawSpread > gradedSpread + 8,
+    `A/B raw should be more colored than the grade (raw ${rawSpread.toFixed(2)} vs graded ${gradedSpread.toFixed(2)})`,
+  );
+  await ctx.close();
+});
+
+test("exposure slider changes overall brightness", async () => {
+  const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
+  const sender = await ctx.newPage();
+  await sender.goto(`${HTTPS_BASE}/sender.html`);
+  await sender.waitForFunction(
+    () => document.getElementById("preview").width > 0,
+    { timeout: 20000 },
+  );
+
+  await setParam(sender, "exposure", 1);
+  const bright = await avg(() => readMean(sender).then(luma));
+  await setParam(sender, "exposure", -1);
+  const dark = await avg(() => readMean(sender).then(luma));
+
+  assert.ok(
+    bright > dark + 20,
+    `+1 stop should be clearly brighter than -1 (bright ${bright.toFixed(1)} vs dark ${dark.toFixed(1)})`,
+  );
+  await ctx.close();
+});
+
 test("sender raises the encode bitrate well above the WebRTC default", async () => {
   const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
   const receiver = await ctx.newPage();
