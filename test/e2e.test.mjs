@@ -305,6 +305,51 @@ test("exposure slider changes overall brightness", async () => {
   await ctx.close();
 });
 
+test("Slim face narrows a centered subject (deterministic, synthetic frame)", async () => {
+  const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
+  const page = await ctx.newPage();
+  await page.goto(`${HTTPS_BASE}/`); // same origin so we can import the module
+
+  const w = await page.evaluate(async () => {
+    const { CameraFilter, DEFAULT_PARAMS } = await import("/filters.js");
+    const S = 400,
+      barHalf = 40; // 80px white bar centered on black
+    const src = document.createElement("canvas");
+    src.width = S;
+    src.height = S;
+    const sx = src.getContext("2d");
+    sx.fillStyle = "#000";
+    sx.fillRect(0, 0, S, S);
+    sx.fillStyle = "#fff";
+    sx.fillRect(S / 2 - barHalf, 0, barHalf * 2, S);
+
+    const target = document.createElement("canvas");
+    const f = new CameraFilter(target);
+    const readback = document.createElement("canvas");
+    readback.width = S;
+    readback.height = S;
+    const rx = readback.getContext("2d");
+    const measure = (slim) => {
+      f.setSize(S, S);
+      f.render(src, 0, { ...DEFAULT_PARAMS, slim }, S, S);
+      rx.clearRect(0, 0, S, S);
+      rx.drawImage(target, 0, 0);
+      const row = rx.getImageData(0, S / 2, S, 1).data;
+      let n = 0;
+      for (let i = 0; i < row.length; i += 4) if (row[i] > 128) n++;
+      return n; // white pixels across the middle row = subject width
+    };
+    return { base: measure(0), slim: measure(0.3) };
+  });
+
+  assert.ok(w.base > 40, `bar should be visible at slim 0, got ${w.base}px`);
+  assert.ok(
+    w.slim < w.base * 0.88,
+    `slim should narrow the subject (base ${w.base}px -> slim ${w.slim}px)`,
+  );
+  await ctx.close();
+});
+
 test("sender raises the encode bitrate well above the WebRTC default", async () => {
   const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
   const receiver = await ctx.newPage();
