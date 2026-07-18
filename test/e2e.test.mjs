@@ -350,6 +350,124 @@ test("Slim face narrows a centered subject (deterministic, synthetic frame)", as
   await ctx.close();
 });
 
+test("background blur: masked background loses detail, subject stays sharp", async () => {
+  const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
+  const page = await ctx.newPage();
+  await page.goto(`${HTTPS_BASE}/`);
+
+  const r = await page.evaluate(async () => {
+    const { CameraFilter, DEFAULT_PARAMS } = await import("/filters.js");
+    const S = 256;
+    // high-frequency checkerboard everywhere so "blur" = measurable detail loss
+    const src = document.createElement("canvas");
+    src.width = S;
+    src.height = S;
+    const sx = src.getContext("2d");
+    for (let y = 0; y < S; y += 8)
+      for (let x = 0; x < S; x += 8) {
+        sx.fillStyle = ((x / 8 + y / 8) & 1) === 0 ? "#fff" : "#000";
+        sx.fillRect(x, y, 8, 8);
+      }
+    // mask: left half = subject (255), right half = background (0)
+    const mask = new Uint8Array(S * S);
+    for (let y = 0; y < S; y++)
+      for (let x = 0; x < S; x++) mask[y * S + x] = x < S / 2 ? 255 : 0;
+
+    const target = document.createElement("canvas");
+    const f = new CameraFilter(target);
+    f.setSize(S, S);
+    f.setMask(mask, S, S);
+    f.render(src, 0, { ...DEFAULT_PARAMS, blur: 1 }, S, S);
+
+    const rd = document.createElement("canvas");
+    rd.width = S;
+    rd.height = S;
+    const rx = rd.getContext("2d");
+    rx.drawImage(target, 0, 0);
+    // horizontal detail energy in a column band, averaged over middle rows
+    const detail = (x0f, x1f) => {
+      const x0 = Math.floor(S * x0f),
+        x1 = Math.floor(S * x1f);
+      let e = 0;
+      for (let y = S * 0.3; y < S * 0.7; y++) {
+        const row = rx.getImageData(x0, y, x1 - x0, 1).data;
+        for (let i = 0; i < row.length - 4; i += 4)
+          e += Math.abs(row[i] - row[i + 4]);
+      }
+      return e;
+    };
+    return { subject: detail(0.15, 0.35), background: detail(0.65, 0.85) };
+  });
+
+  assert.ok(r.subject > 1000, `subject side should keep detail, got ${r.subject}`);
+  assert.ok(
+    r.background < r.subject * 0.6,
+    `background should be blurred vs subject (subject ${r.subject}, background ${r.background})`,
+  );
+  await ctx.close();
+});
+
+test("MediaPipe segmentation assets are served with the right MIME", async () => {
+  const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
+  const page = await ctx.newPage();
+  const check = async (path) =>
+    page.evaluate(async (p) => {
+      const r = await fetch(p);
+      return { ok: r.ok, ct: r.headers.get("content-type") };
+    }, path);
+  await page.goto(`${HTTPS_BASE}/`);
+  const wasm = await check("/vendor/mediapipe/wasm/vision_wasm_internal.wasm");
+  const model = await check("/vendor/mediapipe/selfie_segmenter.tflite");
+  const bundle = await check("/vendor/mediapipe/vision_bundle.mjs");
+  assert.equal(wasm.ok, true, "wasm should serve");
+  assert.match(wasm.ct, /application\/wasm/, `wasm MIME was ${wasm.ct}`);
+  assert.equal(model.ok, true, "model should serve");
+  assert.equal(bundle.ok, true, "vision bundle should serve");
+  assert.match(bundle.ct, /javascript/, `bundle MIME was ${bundle.ct}`);
+  await ctx.close();
+});
+
+test("MediaPipe selfie segmentation loads and returns a mask in-browser", async () => {
+  const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
+  const page = await ctx.newPage();
+  await page.goto(`${HTTPS_BASE}/`);
+  const info = await page.evaluate(async () => {
+    const vision = await import("/vendor/mediapipe/vision_bundle.mjs");
+    const fileset = await vision.FilesetResolver.forVisionTasks(
+      "/vendor/mediapipe/wasm",
+    );
+    const seg = await vision.ImageSegmenter.createFromOptions(fileset, {
+      baseOptions: {
+        modelAssetPath: "/vendor/mediapipe/selfie_segmenter.tflite",
+      },
+      runningMode: "VIDEO",
+      outputConfidenceMasks: true,
+      outputCategoryMask: false,
+    });
+    const c = document.createElement("canvas");
+    c.width = 256;
+    c.height = 256;
+    const g = c.getContext("2d");
+    g.fillStyle = "#888";
+    g.fillRect(0, 0, 256, 256);
+    g.fillStyle = "#c98";
+    g.beginPath();
+    g.arc(128, 128, 60, 0, 7);
+    g.fill();
+    const res = seg.segmentForVideo(c, performance.now());
+    const m = res.confidenceMasks && res.confidenceMasks[0];
+    const out = m ? { w: m.width, h: m.height } : null;
+    if (res.close) res.close();
+    if (seg.close) seg.close();
+    return out;
+  });
+  assert.ok(
+    info && info.w > 0 && info.h > 0,
+    `expected a real mask from the model, got ${JSON.stringify(info)}`,
+  );
+  await ctx.close();
+});
+
 test("sender raises the encode bitrate well above the WebRTC default", async () => {
   const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
   const receiver = await ctx.newPage();
