@@ -49,6 +49,31 @@ the corrected feed actually looks like your real face. That's this document.
    OBS, no dropped-frame stutter, phone doesn't overheat. If 4K stutters or the
    phone gets hot, drop to 1080p (the shader is heavier at 4K/60). Pass / Fail: __
 
+## Telephoto / background blur (the TikTok "zoom" look)
+
+Background isolation uses on-device MediaPipe segmentation. The model loads the
+first time you enable blur (~11MB, a one-time couple-second hitch). The WebGL
+compositing, asset serving, and the model loading + returning a mask are all
+covered by automated tests; what's manual is how it looks on your real face.
+
+9. **Telephoto preset.** Tap **Adjust → Telephoto**. → Expected: after a brief
+   load, the frame crops in slightly and the background softens while your face
+   stays sharp. Should read like a longer lens, not an obvious cutout.
+   Pass / Fail: ____
+
+10. **Blur is subtle, not obvious.** Look at the edge around your hair/shoulders.
+    → Expected: a soft feathered transition, no hard halo, no flicker as you
+    move. If it looks like an obvious filter, drop **Background blur** lower.
+    Pass / Fail: ____
+
+11. **Polarity sanity check.** → Expected: the BACKGROUND is blurred and YOU are
+    sharp. If it's inverted (your face blurred, background sharp), that's a
+    one-line mask-polarity flip — report it. Pass / Fail: ____
+
+12. **Blur off = no cost.** Set Background blur to 0 (or pick a non-Telephoto
+    preset). → Expected: segmentation stops running, no perf/battery cost.
+    Pass / Fail: ____
+
 ## Coverage summary
 
 - Automated (desktop, fake camera): grade alters frame, A/B bypass, exposure,
