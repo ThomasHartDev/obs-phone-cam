@@ -29,9 +29,10 @@ export const DEFAULT_PARAMS = {
 // Named starting points. "True to Life" is the default: a touch of lens
 // correction + neutral color, the honest baseline to tune from.
 export const PRESETS = {
-  // Default: correct the wide-angle bulge (lens) AND slim the face back to how
-  // it looks in the mirror — the iPhone front cam widens whatever's centered.
-  "True to Life": { ...DEFAULT_PARAMS, lens: 0.14, slim: 0.16, contrast: 1.02 },
+  // Default: gently correct the wide-angle bulge (lens) and a light slim back
+  // toward how you look in a mirror. Kept subtle on purpose — the iPhone front
+  // cam widens whatever's centered, but overcorrecting reads as a filter.
+  "True to Life": { ...DEFAULT_PARAMS, lens: 0.1, slim: 0.08, contrast: 1.02 },
   Natural: { ...DEFAULT_PARAMS },
   "Warm Studio": {
     ...DEFAULT_PARAMS,
@@ -39,10 +40,10 @@ export const PRESETS = {
     skin: 0.1,
     exposure: 0.15,
     contrast: 1.05,
-    lens: 0.14,
-    slim: 0.16,
+    lens: 0.1,
+    slim: 0.08,
   },
-  Cool: { ...DEFAULT_PARAMS, temp: -0.2, saturation: 0.95, lens: 0.14, slim: 0.16 },
+  Cool: { ...DEFAULT_PARAMS, temp: -0.2, saturation: 0.95, lens: 0.1, slim: 0.08 },
   "Flat (LUT-ready)": {
     ...DEFAULT_PARAMS,
     contrast: 0.85,
