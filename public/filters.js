@@ -21,6 +21,7 @@ export const DEFAULT_PARAMS = {
   slim: 0, // 0..0.35  horizontal slim of the central band (thinner face)
   zoom: 1, // 1..2  crop in (tighter FOV = flatter face)
   soften: 0, // 0..1  undo iOS over-sharpening
+  blur: 0, // 0..1  background blur (telephoto DOF, needs segmentation)
   mirror: false, // true = flip L/R (selfie-natural); false = true orientation
   calib: false, // split-screen raw | graded
   split: 0.5, // wipe position when calib on
@@ -44,6 +45,16 @@ export const PRESETS = {
     slim: 0.08,
   },
   Cool: { ...DEFAULT_PARAMS, temp: -0.2, saturation: 0.95, lens: 0.1, slim: 0.08 },
+  // "Filmed from across the room": crop in for telephoto flatten + blur the
+  // background so the face pops. Kept gentle so it reads as a lens, not a filter.
+  Telephoto: {
+    ...DEFAULT_PARAMS,
+    zoom: 1.2,
+    lens: 0.1,
+    slim: 0.06,
+    blur: 0.55,
+    contrast: 1.03,
+  },
   "Flat (LUT-ready)": {
     ...DEFAULT_PARAMS,
     contrast: 0.85,
@@ -80,6 +91,9 @@ uniform float uSaturation;
 uniform float uSkin;
 uniform float uCalib;     // 1 = split-screen
 uniform float uSplit;
+uniform sampler2D uMask;  // person-segmentation mask (1 = you, 0 = background)
+uniform float uHasMask;   // 1 when a fresh mask is available
+uniform float uBlur;      // background-blur strength (telephoto DOF)
 
 // Map an output UV to a source UV through rotation + geometry.
 vec2 sourceUv(vec2 uv) {
@@ -125,6 +139,19 @@ vec3 grade(vec3 col) {
   return col;
 }
 
+// Golden-angle disk blur of the source — cheap, smooth enough for a gentle DOF.
+vec3 diskBlur(vec2 uv, vec2 rad) {
+  vec3 sum = texture2D(uTex, uv).rgb;
+  const float ga = 2.399963; // golden angle (radians)
+  for (int i = 1; i <= 12; i++) {
+    float t = float(i);
+    float a = ga * t;
+    float r = sqrt(t / 12.0); // even area coverage
+    sum += texture2D(uTex, uv + vec2(cos(a), sin(a)) * rad * r).rgb;
+  }
+  return sum / 13.0;
+}
+
 void main() {
   vec2 sUv = sourceUv(vUv);
   // outside the source frame after a crop-out? clamp to edge, no wrap
@@ -138,8 +165,16 @@ void main() {
     return;
   }
 
-  vec3 col = grade(sampleSoft(sUv));
-  gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
+  vec3 col = sampleSoft(sUv);
+  // Telephoto depth-of-field: keep you (mask≈1) sharp, blur the background.
+  // Feathered edge + a gentle radius so it reads as a lens, not a cutout.
+  if (uHasMask > 0.5 && uBlur > 0.001) {
+    vec3 blurred = diskBlur(sUv, uTexel * (18.0 * uBlur));
+    float person = texture2D(uMask, sUv).r;
+    float bg = 1.0 - smoothstep(0.35, 0.65, person);
+    col = mix(col, blurred, bg * uBlur);
+  }
+  gl_FragColor = vec4(clamp(grade(col), 0.0, 1.0), 1.0);
 }`;
 
 function compile(gl, type, src) {
@@ -187,13 +222,21 @@ export class CameraFilter {
     gl.enableVertexAttribArray(loc);
     gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
 
-    this.tex = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, this.tex);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true); // video is top-down
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true); // video + mask are top-down
+
+    const mkTex = (unit) => {
+      const t = gl.createTexture();
+      gl.activeTexture(gl.TEXTURE0 + unit);
+      gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      return t;
+    };
+    this.tex = mkTex(0); // video on unit 0
+    this.mask = mkTex(1); // segmentation mask on unit 1
+    this.hasMask = false;
 
     this.u = {};
     for (const name of [
@@ -212,9 +255,38 @@ export class CameraFilter {
       "uSkin",
       "uCalib",
       "uSplit",
+      "uMask",
+      "uHasMask",
+      "uBlur",
     ]) {
       this.u[name] = gl.getUniformLocation(prog, name);
     }
+    // bind the samplers to their texture units
+    gl.uniform1i(gl.getUniformLocation(prog, "uTex"), 0);
+    gl.uniform1i(this.u.uMask, 1);
+  }
+
+  // Upload a person mask (Uint8 luminance, 1 byte/px). Pass null to disable DOF.
+  setMask(data, w, h) {
+    const gl = this.gl;
+    if (!data) {
+      this.hasMask = false;
+      return;
+    }
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, this.mask);
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.LUMINANCE,
+      w,
+      h,
+      0,
+      gl.LUMINANCE,
+      gl.UNSIGNED_BYTE,
+      data,
+    );
+    this.hasMask = true;
   }
 
   setSize(w, h) {
@@ -226,14 +298,9 @@ export class CameraFilter {
   // rotationDeg: how the canvas is rotated vs the source (0/90/180/270).
   render(video, rotationDeg, p, vw, vh) {
     const gl = this.gl;
-    gl.texImage2D(
-      gl.TEXTURE_2D,
-      0,
-      gl.RGB,
-      gl.RGB,
-      gl.UNSIGNED_BYTE,
-      video,
-    );
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, video);
 
     // inverse rotation: output UV -> source UV
     const a = (-rotationDeg * Math.PI) / 180;
@@ -261,6 +328,8 @@ export class CameraFilter {
     gl.uniform1f(this.u.uSkin, p.skin);
     gl.uniform1f(this.u.uCalib, p.calib ? 1 : 0);
     gl.uniform1f(this.u.uSplit, p.split);
+    gl.uniform1f(this.u.uBlur, p.blur || 0);
+    gl.uniform1f(this.u.uHasMask, this.hasMask ? 1 : 0);
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
   }

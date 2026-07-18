@@ -31,6 +31,7 @@
           <label>Slim face<input type="range" data-p="slim" min="0" max="0.35" step="0.01" /></label>
           <label>Zoom<input type="range" data-p="zoom" min="1" max="2" step="0.01" /></label>
           <label>Soften<input type="range" data-p="soften" min="0" max="1" step="0.01" /></label>
+          <label>Background blur<input type="range" data-p="blur" min="0" max="1" step="0.01" /></label>
         </div>
         <div class="toggles">
           <label><input id="mirror" type="checkbox" /> Mirror</label>
@@ -120,6 +121,67 @@
         return (base + rotationOffset) % 360;
       }
 
+      // Background blur needs a person mask. MediaPipe selfie segmentation runs
+      // on-device; we load it lazily (only when blur is first turned on) so the
+      // ~11MB wasm never costs anyone who doesn't use it. Fail-soft: if it can't
+      // load, blur simply stays off and everything else works.
+      let segmenter = null;
+      let segLoading = false;
+      let lastSegTs = 0;
+      let smoothMask = null;
+      async function ensureSegmenter() {
+        if (segmenter || segLoading) return;
+        segLoading = true;
+        try {
+          const vision = await import("/vendor/mediapipe/vision_bundle.mjs");
+          const fileset = await vision.FilesetResolver.forVisionTasks(
+            "/vendor/mediapipe/wasm",
+          );
+          segmenter = await vision.ImageSegmenter.createFromOptions(fileset, {
+            baseOptions: {
+              modelAssetPath: "/vendor/mediapipe/selfie_segmenter.tflite",
+            },
+            runningMode: "VIDEO",
+            outputConfidenceMasks: true,
+            outputCategoryMask: false,
+          });
+        } catch (e) {
+          console.warn("segmenter init failed; background blur disabled", e);
+          segmenter = null;
+        } finally {
+          segLoading = false;
+        }
+      }
+      function updateMask(ap) {
+        if (!ap.blur || ap.blur < 0.001) {
+          filter.setMask(null);
+          return;
+        }
+        ensureSegmenter();
+        if (!segmenter) return; // still loading -> render sharp until ready
+        const now = performance.now();
+        if (now - lastSegTs < 40) return; // ~25fps; reuse last mask between
+        lastSegTs = now;
+        let res;
+        try {
+          res = segmenter.segmentForVideo(raw, now);
+        } catch {
+          return;
+        }
+        const m = res && res.confidenceMasks && res.confidenceMasks[0];
+        if (m) {
+          const u8 = m.getAsUint8Array(); // 0..255 person confidence
+          // temporal smoothing kills the mask flicker that reads as "a filter"
+          if (!smoothMask || smoothMask.length !== u8.length)
+            smoothMask = new Uint8Array(u8);
+          else
+            for (let i = 0; i < u8.length; i++)
+              smoothMask[i] = (smoothMask[i] + u8[i]) >> 1;
+          filter.setMask(smoothMask, m.width, m.height);
+        }
+        if (res && res.close) res.close();
+      }
+
       function drawFrame() {
         if (!drawing) return;
         const vw = raw.videoWidth,
@@ -128,8 +190,10 @@
           const ang = effectiveRotation();
           // a 90/270° rotation swaps the output's width and height
           const [cw, ch] = ang % 180 === 0 ? [vw, vh] : [vh, vw];
+          const ap = activeParams();
+          updateMask(ap);
           filter.setSize(cw, ch);
-          filter.render(raw, ang, activeParams(), vw, vh);
+          filter.render(raw, ang, ap, vw, vh);
         }
         requestAnimationFrame(drawFrame);
       }

@@ -2,3 +2,6 @@ node_modules/
 certs/*.pem
 *.log
 .DS_Store
+public/vendor/
+
+.task/
