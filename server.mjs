@@ -93,6 +93,9 @@ const MIME = {
   ".svg": "image/svg+xml",
   ".png": "image/png",
   ".ico": "image/x-icon",
+  ".wasm": "application/wasm", // Safari streaming-compiles only with the right MIME
+  ".tflite": "application/octet-stream",
+  ".json": "application/json; charset=utf-8",
 };
 
 function serveStatic(req, res) {

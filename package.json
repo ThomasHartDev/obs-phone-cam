@@ -1,6 +1,6 @@
 {
   "name": "obs-phone-cam",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Use your iPhone as a low-latency camera source in OBS over your local network. No app install, no per-month fee.",
@@ -9,9 +9,11 @@
   },
   "scripts": {
     "start": "node server.mjs",
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "postinstall": "node scripts/setup-mediapipe.mjs"
   },
   "dependencies": {
+    "@mediapipe/tasks-vision": "^0.10.35",
     "qrcode": "^1.5.4",
     "selfsigned": "^2.4.1",
     "ws": "^8.18.0"
