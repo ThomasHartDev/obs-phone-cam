@@ -129,7 +129,9 @@
       let rawStream = null;
       let outStream = null; // the rotated canvas stream we send
       let drawing = false;
-      let pc = null;
+      let pc = null; // primary OBS receiver peer
+      /** @type {Map<string, RTCPeerConnection>} */
+      const viewerPcs = new Map(); // Command Center / extra watchers
       let peerPresent = false;
 
       const setStatus = (t, cls = "") => {
@@ -268,8 +270,8 @@
         if (v.includes("1920")) return 14_000_000; // 1080p
         return 7_000_000; // 720p
       }
-      async function tuneSender() {
-        const s = pc
+      async function tuneSenderOn(connection, { markBitrate = false } = {}) {
+        const s = connection
           .getSenders()
           .find((x) => x.track && x.track.kind === "video");
         if (!s) return;
@@ -281,8 +283,10 @@
           p.degradationPreference = "maintain-resolution";
           await s.setParameters(p);
           // reflect the applied ceiling so it's inspectable (used by the e2e test)
-          const applied = s.getParameters().encodings?.[0]?.maxBitrate;
-          if (applied) document.body.dataset.maxBitrate = String(applied);
+          if (markBitrate) {
+            const applied = s.getParameters().encodings?.[0]?.maxBitrate;
+            if (applied) document.body.dataset.maxBitrate = String(applied);
+          }
         } catch {
           /* older browsers: bitrate stays at default, still works */
         }
@@ -297,7 +301,7 @@
         if (pc) pc.close();
         pc = new RTCPeerConnection(RTC_CONFIG);
         for (const t of sendTracks()) pc.addTrack(t, outStream);
-        tuneSender();
+        tuneSenderOn(pc, { markBitrate: true });
         pc.onicecandidate = (e) => {
           if (e.candidate) sig.send({ type: "ice", candidate: e.candidate });
         };
@@ -320,11 +324,54 @@
         setStatus("Connecting…");
       }
 
+      // After track changes (flip cam / res / mic), re-offer OBS + every viewer.
+      async function renegotiateMedia() {
+        if (peerPresent) await offer();
+        await offerAllViewers();
+      }
+
+      // Extra watchers (Command Center film tab). Same processed canvas as OBS.
+      async function offerViewer(id) {
+        if (!outStream || !rawStream || !id) return;
+        const prev = viewerPcs.get(id);
+        if (prev) {
+          try {
+            prev.close();
+          } catch {}
+        }
+        const vpc = new RTCPeerConnection(RTC_CONFIG);
+        viewerPcs.set(id, vpc);
+        for (const t of sendTracks()) vpc.addTrack(t, outStream);
+        await tuneSenderOn(vpc);
+        vpc.onicecandidate = (e) => {
+          if (e.candidate)
+            sig.send({ type: "ice", candidate: e.candidate, peerId: id });
+        };
+        vpc.onconnectionstatechange = () => {
+          if (["failed", "closed"].includes(vpc.connectionState)) {
+            // keep the slot; viewer page will reconnect and re-offer
+          }
+        };
+        const desc = await vpc.createOffer();
+        await vpc.setLocalDescription(desc);
+        sig.send({ type: "offer", sdp: vpc.localDescription, peerId: id });
+      }
+
+      async function offerAllViewers() {
+        for (const id of viewerPcs.keys()) await offerViewer(id);
+      }
+
       const sig = new Signal("sender");
       sig.addEventListener("superseded", () => {
         drawing = false;
         if (rawStream) rawStream.getTracks().forEach((t) => t.stop());
         if (pc) pc.close();
+        for (const v of viewerPcs.values()) {
+          try {
+            v.close();
+          } catch {}
+        }
+        viewerPcs.clear();
         setStatus("Another tab is using the camera — close this one.", "warn");
       });
       sig.addEventListener("msg", async ({ detail: msg }) => {
@@ -333,11 +380,35 @@
           if (peerPresent) offer();
           else setStatus("Waiting for OBS…", "warn");
           broadcastState();
+        } else if (msg.type === "viewer") {
+          const id = String(msg.id || "");
+          if (!id) return;
+          if (msg.present) {
+            await offerViewer(id);
+          } else {
+            const v = viewerPcs.get(id);
+            if (v) {
+              try {
+                v.close();
+              } catch {}
+            }
+            viewerPcs.delete(id);
+          }
         } else if (msg.type === "answer") {
-          await pc.setRemoteDescription(msg.sdp);
-        } else if (msg.type === "ice" && pc) {
+          if (msg.peerId) {
+            const v = viewerPcs.get(String(msg.peerId));
+            if (v) await v.setRemoteDescription(msg.sdp);
+          } else if (pc) {
+            await pc.setRemoteDescription(msg.sdp);
+          }
+        } else if (msg.type === "ice") {
           try {
-            await pc.addIceCandidate(msg.candidate);
+            if (msg.peerId) {
+              const v = viewerPcs.get(String(msg.peerId));
+              if (v) await v.addIceCandidate(msg.candidate);
+            } else if (pc) {
+              await pc.addIceCandidate(msg.candidate);
+            }
           } catch {}
         } else if (msg.type === "control") {
           await applyControl(msg);
@@ -378,7 +449,7 @@
           facing = msg.facing;
           document.body.dataset.facing = facing;
           await getCamera();
-          offer();
+          await renegotiateMedia();
           broadcastState();
           return;
         }
@@ -386,21 +457,21 @@
           facing = facing === "environment" ? "user" : "environment";
           document.body.dataset.facing = facing;
           await getCamera();
-          offer();
+          await renegotiateMedia();
           broadcastState();
           return;
         }
         if (op === "res" && typeof msg.value === "string") {
           resSel.value = msg.value;
           await getCamera();
-          offer();
+          await renegotiateMedia();
           broadcastState();
           return;
         }
         if (op === "mic") {
           micBox.checked = !!msg.enabled;
           await getCamera();
-          offer();
+          await renegotiateMedia();
           broadcastState();
           return;
         }
@@ -421,7 +492,7 @@
         facing = facing === "environment" ? "user" : "environment";
         document.body.dataset.facing = facing;
         await getCamera();
-        offer();
+        await renegotiateMedia();
         broadcastState();
       };
       mirrorBtn.onclick = () => {
@@ -432,12 +503,12 @@
       };
       resSel.onchange = async () => {
         await getCamera();
-        offer();
+        await renegotiateMedia();
         broadcastState();
       };
       micBox.onchange = async () => {
         await getCamera();
-        offer();
+        await renegotiateMedia();
         broadcastState();
       };
 
