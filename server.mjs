@@ -98,11 +98,15 @@ const MIME = {
   ".json": "application/json; charset=utf-8",
 };
 
-// Laptop UIs fetch QR / lan.json cross-origin.
+// Laptop UIs fetch QR / lan.json / control cross-origin.
 const CORS = {
   "access-control-allow-origin": "*",
-  "access-control-allow-methods": "GET, OPTIONS",
+  "access-control-allow-methods": "GET, POST, OPTIONS",
+  "access-control-allow-headers": "content-type",
 };
+
+/** Last phone state broadcast (HTTP clients poll this — no browser→WS needed). */
+let lastPhoneState = null;
 
 function serveStatic(req, res) {
   const url = new URL(req.url, "https://x");
@@ -126,6 +130,24 @@ function serveStatic(req, res) {
         ...CORS,
       })
       .end(data);
+  });
+}
+
+function readBody(req, limit = 64_000) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    req.on("data", (c) => {
+      size += c.length;
+      if (size > limit) {
+        reject(new Error("body too large"));
+        req.destroy();
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    req.on("error", reject);
   });
 }
 
@@ -155,6 +177,62 @@ async function handleRequest(req, res) {
         ...CORS,
       })
       .end(JSON.stringify({ ips: lanIps(), port: PORT, httpPort: HTTP_PORT }));
+    return;
+  }
+  // HTTP control path for remote laptop UIs (browser cannot open wss://localhost
+  // from a public HTTPS origin — Chrome Private Network Access). Server-side
+  // A remote UI can POST here when the browser cannot open a WebSocket to localhost.
+  if (url.pathname === "/control" && req.method === "POST") {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      res.writeHead(400, { "content-type": "application/json", ...CORS }).end(
+        JSON.stringify({ ok: false, error: "invalid json" }),
+      );
+      return;
+    }
+    if (!body || typeof body !== "object") {
+      res.writeHead(400, { "content-type": "application/json", ...CORS }).end(
+        JSON.stringify({ ok: false, error: "object required" }),
+      );
+      return;
+    }
+    // Accept either a full control envelope or a bare {op, ...} payload.
+    const msg =
+      body.type === "control"
+        ? body
+        : { type: "control", ...body };
+    if (!isOpen(peers.sender)) {
+      res.writeHead(503, { "content-type": "application/json", ...CORS }).end(
+        JSON.stringify({
+          ok: false,
+          error: "phone not connected — open sender on the iPhone",
+          phonePresent: false,
+        }),
+      );
+      return;
+    }
+    peers.sender.send(JSON.stringify(msg));
+    res.writeHead(200, { "content-type": "application/json", ...CORS }).end(
+      JSON.stringify({ ok: true, phonePresent: true }),
+    );
+    return;
+  }
+  if (url.pathname === "/state" && req.method === "GET") {
+    res
+      .writeHead(200, {
+        "content-type": "application/json",
+        ...CORS,
+        "cache-control": "no-store",
+      })
+      .end(
+        JSON.stringify({
+          ok: true,
+          phonePresent: !!peers.sender,
+          state: lastPhoneState,
+        }),
+      );
     return;
   }
   serveStatic(req, res);
@@ -312,8 +390,9 @@ function handleWs(ws, req) {
     }
 
     if (role === "sender") {
-      // Phone state updates go to every laptop controller.
+      // Phone state updates go to every laptop controller + HTTP pollers.
       if (msg.type === "state") {
+        lastPhoneState = msg;
         broadcastToControllers(raw);
         return;
       }
