@@ -98,6 +98,12 @@ const MIME = {
   ".json": "application/json; charset=utf-8",
 };
 
+// Laptop UIs fetch QR / lan.json cross-origin.
+const CORS = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "GET, OPTIONS",
+};
+
 function serveStatic(req, res) {
   const url = new URL(req.url, "https://x");
   let pathname = decodeURIComponent(url.pathname);
@@ -117,6 +123,7 @@ function serveStatic(req, res) {
       .writeHead(200, {
         "content-type":
           MIME[path.extname(filePath)] || "application/octet-stream",
+        ...CORS,
       })
       .end(data);
   });
@@ -124,12 +131,18 @@ function serveStatic(req, res) {
 
 async function handleRequest(req, res) {
   const url = new URL(req.url, "https://x");
+  if (req.method === "OPTIONS") {
+    res.writeHead(204, CORS).end();
+    return;
+  }
   // QR PNG for the sender URL so the phone can scan instead of typing an IP.
   if (url.pathname === "/qr") {
     const target = url.searchParams.get("url") || "";
     try {
       const png = await QRCode.toBuffer(target, { width: 320, margin: 1 });
-      res.writeHead(200, { "content-type": "image/png" }).end(png);
+      res
+        .writeHead(200, { "content-type": "image/png", ...CORS })
+        .end(png);
     } catch {
       res.writeHead(400).end("bad url");
     }
@@ -137,7 +150,10 @@ async function handleRequest(req, res) {
   }
   if (url.pathname === "/lan.json") {
     res
-      .writeHead(200, { "content-type": "application/json" })
+      .writeHead(200, {
+        "content-type": "application/json",
+        ...CORS,
+      })
       .end(JSON.stringify({ ips: lanIps(), port: PORT, httpPort: HTTP_PORT }));
     return;
   }
