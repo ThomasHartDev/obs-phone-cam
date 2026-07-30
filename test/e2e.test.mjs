@@ -489,3 +489,167 @@ test("sender raises the encode bitrate well above the WebRTC default", async () 
 
   await ctx.close();
 });
+
+// --- laptop remote control ---
+// Controller role on the landing page drives the phone over WS without
+// stealing the OBS receiver slot.
+
+test("laptop controller can set exposure and mirror on the phone", async () => {
+  const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
+  // Phone + OBS path first so the sender is live.
+  const receiver = await ctx.newPage();
+  await receiver.goto(`${HTTP_BASE}/receiver.html`);
+  const sender = await ctx.newPage();
+  await sender.goto(`${HTTPS_BASE}/sender.html`);
+  await sender.waitForFunction(
+    () => document.getElementById("preview").width > 0,
+    { timeout: 20000 },
+  );
+
+  // Laptop landing page = controller role.
+  const control = await ctx.newPage();
+  await control.goto(`${HTTPS_BASE}/`);
+  await control.waitForFunction(
+    () => window.__obscamRemote && window.__obscamRemote.phonePresent,
+    { timeout: 15000 },
+  );
+  // Wait for the first state dump from the phone.
+  await control.waitForFunction(
+    () => window.__obscamRemote.lastState?.params,
+    { timeout: 10000 },
+  );
+
+  // Drive exposure remotely and assert the phone's live params update.
+  await control.evaluate(() =>
+    window.__obscamRemote.send({
+      type: "control",
+      op: "params",
+      params: { exposure: 0.55 },
+    }),
+  );
+  await sender.waitForFunction(
+    () => window.__obscam?.params?.exposure === 0.55,
+    { timeout: 8000 },
+  );
+
+  // Mirror toggle from the laptop quick-access button.
+  await control.click("#rcMirror");
+  await sender.waitForFunction(() => window.__obscam?.params?.mirror === true, {
+    timeout: 8000,
+  });
+  // Laptop UI should reflect the phone's state broadcast.
+  await control.waitForFunction(
+    () => window.__obscamRemote.lastState?.params?.mirror === true,
+    { timeout: 8000 },
+  );
+
+  // Controller must NOT have stolen the OBS receiver: frames still flow.
+  await receiver.waitForFunction(
+    () => {
+      const v = document.getElementById("feed");
+      return v && v.srcObject && v.videoWidth > 0;
+    },
+    { timeout: 10000 },
+  );
+
+  await ctx.close();
+});
+
+test("laptop rotate + resolution controls reach the sender", async () => {
+  const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
+  const receiver = await ctx.newPage();
+  await receiver.goto(`${HTTP_BASE}/receiver.html`);
+  const sender = await ctx.newPage();
+  await sender.goto(`${HTTPS_BASE}/sender.html`);
+  await sender.waitForFunction(
+    () => document.getElementById("preview").width > 0,
+    { timeout: 20000 },
+  );
+
+  const control = await ctx.newPage();
+  await control.goto(`${HTTPS_BASE}/`);
+  await control.waitForFunction(
+    () => window.__obscamRemote?.lastState?.params,
+    { timeout: 15000 },
+  );
+
+  const before = await sender.evaluate(() => window.__obscam.rotationOffset);
+  await control.click("#rcRotate");
+  await sender.waitForFunction(
+    (prev) => window.__obscam.rotationOffset === (prev + 90) % 360,
+    before,
+    { timeout: 8000 },
+  );
+
+  await control.selectOption("#rcRes", "1280x720");
+  await sender.waitForFunction(() => window.__obscam.res === "1280x720", {
+    timeout: 10000,
+  });
+
+  await ctx.close();
+});
+
+test("Flip V reverses top/bottom of a synthetic frame", async () => {
+  const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
+  const page = await ctx.newPage();
+  await page.goto(`${HTTPS_BASE}/`);
+
+  const r = await page.evaluate(async () => {
+    const { CameraFilter, DEFAULT_PARAMS } = await import("/filters.js");
+    const S = 200;
+    const src = document.createElement("canvas");
+    src.width = S;
+    src.height = S;
+    const sx = src.getContext("2d");
+    // top half white, bottom half black — flipV should invert that
+    sx.fillStyle = "#fff";
+    sx.fillRect(0, 0, S, S / 2);
+    sx.fillStyle = "#000";
+    sx.fillRect(0, S / 2, S, S / 2);
+
+    const target = document.createElement("canvas");
+    const f = new CameraFilter(target);
+    const readback = document.createElement("canvas");
+    readback.width = S;
+    readback.height = S;
+    const rx = readback.getContext("2d");
+    const measure = (flipV) => {
+      f.setSize(S, S);
+      f.render(src, 0, { ...DEFAULT_PARAMS, flipV }, S, S);
+      rx.clearRect(0, 0, S, S);
+      rx.drawImage(target, 0, 0);
+      const top = rx.getImageData(S / 2, 10, 1, 1).data[0];
+      const bot = rx.getImageData(S / 2, S - 10, 1, 1).data[0];
+      return { top, bot };
+    };
+    return { base: measure(false), flipped: measure(true) };
+  });
+
+  assert.ok(
+    r.base.top > 200 && r.base.bot < 50,
+    `base should be white-top/black-bot, got top=${r.base.top} bot=${r.base.bot}`,
+  );
+  assert.ok(
+    r.flipped.top < 50 && r.flipped.bot > 200,
+    `flipV should invert, got top=${r.flipped.top} bot=${r.flipped.bot}`,
+  );
+  await ctx.close();
+});
+
+test("Mirror button on the phone toggles horizontal flip param", async () => {
+  const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
+  const sender = await ctx.newPage();
+  await sender.goto(`${HTTPS_BASE}/sender.html`);
+  await sender.waitForFunction(
+    () => document.getElementById("preview").width > 0,
+    { timeout: 20000 },
+  );
+  const before = await sender.evaluate(() => window.__obscam.params.mirror);
+  await sender.click("#mirrorBtn");
+  await sender.waitForFunction(
+    (prev) => window.__obscam.params.mirror === !prev,
+    before,
+    { timeout: 5000 },
+  );
+  await ctx.close();
+});

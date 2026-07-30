@@ -51,8 +51,44 @@
         </p>
       </section>
 
+      <section class="card remote-card">
+        <h2>3. Control from this computer</h2>
+        <p class="note" style="margin-top: 0">
+          After the phone is live, leave it alone. Every camera option lives
+          here — flip, filters, resolution, mic. OBS keeps showing the
+          Browser Source; this panel only sends commands to the phone.
+        </p>
+        <div id="remoteStatus" class="remote-status warn">
+          Waiting for phone…
+        </div>
+
+        <div class="remote-actions">
+          <button id="rcMirror" type="button" aria-pressed="false" title="Mirror left/right">
+            Mirror
+          </button>
+          <button id="rcFlipV" type="button" aria-pressed="false" title="Flip top/bottom">
+            Flip V
+          </button>
+          <button id="rcRotate" type="button">Rotate 90°</button>
+          <button id="rcFlipCam" type="button" title="Switch front/back camera">
+            Front/Back
+          </button>
+          <button id="rcAb" type="button" title="Hold to compare raw">A/B</button>
+          <select id="rcRes" aria-label="Resolution">
+            <option value="1280x720">720p</option>
+            <option value="1920x1080" selected>1080p</option>
+            <option value="3840x2160">4K</option>
+          </select>
+          <label class="mic"
+            ><input id="rcMic" type="checkbox" checked /> Mic</label
+          >
+        </div>
+
+        <div id="rcPanel" class="panel remote-panel"></div>
+      </section>
+
       <section class="card">
-        <h2>3. Use it as a camera device</h2>
+        <h2>4. Use it as a camera device</h2>
         <p>
           In OBS, right side under <strong>Controls</strong>, click
           <strong>Start Virtual Camera</strong>.
@@ -65,34 +101,233 @@
       </section>
     </main>
 
-    <script>
-      (async () => {
-        const { ips, port, httpPort } = await fetch("/lan.json").then((r) =>
-          r.json(),
-        );
-        const ip = ips[0] || location.hostname;
-        const senderUrl = `https://${ip}:${port}/sender.html`;
-        // OBS loads over plain http (its CEF browser won't accept the self-signed https cert)
-        const obsUrl = `http://localhost:${httpPort}/receiver.html`;
-        document.getElementById("qr").src =
-          "/qr?url=" + encodeURIComponent(senderUrl);
-        document.getElementById("senderUrl").textContent = senderUrl;
-        document.getElementById("obsUrl").textContent = obsUrl;
-        const copyBtn = document.getElementById("copyObs");
-        copyBtn.onclick = async () => {
-          await navigator.clipboard?.writeText(obsUrl);
-          copyBtn.textContent = "Copied ✓";
-          setTimeout(() => (copyBtn.textContent = "Copy OBS URL"), 1500);
-        };
-        // Fallback IPs (interface ranking is a best guess on multi-network laptops)
-        const others = ips.slice(1);
-        if (others.length) {
-          document.getElementById("alts").hidden = false;
-          document.getElementById("altList").innerHTML = others
-            .map((x) => `<li>https://${x}:${port}/sender.html</li>`)
-            .join("");
+    <script type="module">
+      import { Signal } from "/signal.js";
+      import {
+        mountFilterPanel,
+        syncPanel,
+        markActivePreset,
+      } from "/control-panel.js";
+
+      // --- setup landing URLs / QR ---
+      const { ips, port, httpPort } = await fetch("/lan.json").then((r) =>
+        r.json(),
+      );
+      const ip = ips[0] || location.hostname;
+      const senderUrl = `https://${ip}:${port}/sender.html`;
+      // OBS loads over plain http (its CEF browser won't accept the self-signed https cert)
+      const obsUrl = `http://localhost:${httpPort}/receiver.html`;
+      document.getElementById("qr").src =
+        "/qr?url=" + encodeURIComponent(senderUrl);
+      document.getElementById("senderUrl").textContent = senderUrl;
+      document.getElementById("obsUrl").textContent = obsUrl;
+      const copyBtn = document.getElementById("copyObs");
+      copyBtn.onclick = async () => {
+        await navigator.clipboard?.writeText(obsUrl);
+        copyBtn.textContent = "Copied ✓";
+        setTimeout(() => (copyBtn.textContent = "Copy OBS URL"), 1500);
+      };
+      const others = ips.slice(1);
+      if (others.length) {
+        document.getElementById("alts").hidden = false;
+        document.getElementById("altList").innerHTML = others
+          .map((x) => `<li>https://${x}:${port}/sender.html</li>`)
+          .join("");
+      }
+
+      // --- remote control (controller role; never steals OBS receiver) ---
+      const statusEl = document.getElementById("remoteStatus");
+      const panelRoot = document.getElementById("rcPanel");
+      const ui = mountFilterPanel(panelRoot, { includeCalib: true });
+      const mirrorBtn = document.getElementById("rcMirror");
+      const flipVBtn = document.getElementById("rcFlipV");
+      const rotateBtn = document.getElementById("rcRotate");
+      const flipCamBtn = document.getElementById("rcFlipCam");
+      const abBtn = document.getElementById("rcAb");
+      const resSel = document.getElementById("rcRes");
+      const micBox = document.getElementById("rcMic");
+
+      let phonePresent = false;
+      let lastState = null;
+      // Avoid feedback loops: when we paint state from the phone, skip re-sending.
+      let applyingRemote = false;
+
+      function setRemoteStatus(text, cls = "") {
+        statusEl.textContent = text;
+        statusEl.className = "remote-status " + cls;
+      }
+
+      function setControlsEnabled(on) {
+        panelRoot.classList.toggle("disabled", !on);
+        for (const el of [
+          mirrorBtn,
+          flipVBtn,
+          rotateBtn,
+          flipCamBtn,
+          abBtn,
+          resSel,
+          micBox,
+          ...ui.sliders,
+          ui.mirror,
+          ui.flipV,
+          ui.calib,
+          ui.reset,
+          ...ui.presets.querySelectorAll("button"),
+        ]) {
+          if (!el) continue;
+          el.disabled = !on;
         }
-      })();
+      }
+      setControlsEnabled(false);
+
+      function send(msg) {
+        if (!phonePresent) return;
+        sig.send(msg);
+      }
+
+      function paintState(state) {
+        lastState = state;
+        applyingRemote = true;
+        try {
+          if (state.params) {
+            syncPanel(ui, state.params);
+            mirrorBtn.setAttribute(
+              "aria-pressed",
+              String(!!state.params.mirror),
+            );
+            flipVBtn.setAttribute(
+              "aria-pressed",
+              String(!!state.params.flipV),
+            );
+          }
+          if (state.res) resSel.value = state.res;
+          if (typeof state.mic === "boolean") micBox.checked = state.mic;
+          const live =
+            state.connectionState === "connected" || state.peerPresent;
+          const facing =
+            state.facing === "user" ? "front cam" : "back cam";
+          if (live) {
+            setRemoteStatus(
+              `Phone live · ${facing} · ${state.res || "—"}`,
+              "live",
+            );
+          } else if (phonePresent) {
+            setRemoteStatus(
+              `Phone connected · waiting for OBS · ${facing}`,
+              "warn",
+            );
+          }
+        } finally {
+          applyingRemote = false;
+        }
+      }
+
+      const sig = new Signal("controller");
+      sig.addEventListener("msg", ({ detail: msg }) => {
+        if (msg.type === "peer" && msg.role === "sender") {
+          phonePresent = !!msg.present;
+          setControlsEnabled(phonePresent);
+          if (!phonePresent) {
+            setRemoteStatus("Waiting for phone…", "warn");
+            lastState = null;
+          } else {
+            setRemoteStatus("Phone connected — loading settings…", "warn");
+            send({ type: "control", op: "getState" });
+          }
+        } else if (msg.type === "state") {
+          phonePresent = true;
+          setControlsEnabled(true);
+          paintState(msg);
+        }
+      });
+      sig.addEventListener("open", () => {
+        // Re-ask state on reconnect.
+        if (phonePresent) send({ type: "control", op: "getState" });
+      });
+
+      // Quick-access buttons
+      mirrorBtn.onclick = () => {
+        const next = !(lastState?.params?.mirror);
+        send({ type: "control", op: "params", params: { mirror: next } });
+      };
+      flipVBtn.onclick = () => {
+        const next = !(lastState?.params?.flipV);
+        send({ type: "control", op: "params", params: { flipV: next } });
+      };
+      rotateBtn.onclick = () => send({ type: "control", op: "rotate" });
+      flipCamBtn.onclick = () => send({ type: "control", op: "flipCamera" });
+      const abDown = () => send({ type: "control", op: "ab", hold: true });
+      const abUp = () => send({ type: "control", op: "ab", hold: false });
+      abBtn.addEventListener("pointerdown", abDown);
+      abBtn.addEventListener("pointerup", abUp);
+      abBtn.addEventListener("pointerleave", abUp);
+      abBtn.addEventListener("pointercancel", abUp);
+
+      resSel.onchange = () => {
+        if (applyingRemote) return;
+        send({ type: "control", op: "res", value: resSel.value });
+      };
+      micBox.onchange = () => {
+        if (applyingRemote) return;
+        send({ type: "control", op: "mic", enabled: micBox.checked });
+      };
+
+      // Filter panel
+      for (const chip of ui.presets.children) {
+        chip.onclick = () => {
+          markActivePreset(ui.presets, chip.textContent);
+          send({ type: "control", op: "preset", name: chip.textContent });
+        };
+      }
+      for (const el of ui.sliders) {
+        el.oninput = () => {
+          if (applyingRemote) return;
+          markActivePreset(ui.presets, "");
+          send({
+            type: "control",
+            op: "params",
+            params: { [el.dataset.p]: Number(el.value) },
+          });
+        };
+      }
+      ui.mirror.onchange = () => {
+        if (applyingRemote) return;
+        send({
+          type: "control",
+          op: "params",
+          params: { mirror: ui.mirror.checked },
+        });
+      };
+      ui.flipV.onchange = () => {
+        if (applyingRemote) return;
+        send({
+          type: "control",
+          op: "params",
+          params: { flipV: ui.flipV.checked },
+        });
+      };
+      if (ui.calib) {
+        ui.calib.onchange = () => {
+          if (applyingRemote) return;
+          send({
+            type: "control",
+            op: "params",
+            params: { calib: ui.calib.checked },
+          });
+        };
+      }
+      ui.reset.onclick = () => send({ type: "control", op: "reset" });
+
+      // Expose for e2e
+      window.__obscamRemote = {
+        get lastState() {
+          return lastState;
+        },
+        get phonePresent() {
+          return phonePresent;
+        },
+        send,
+      };
     </script>
   </body>
 </html>

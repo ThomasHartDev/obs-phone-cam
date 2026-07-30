@@ -5,3 +5,7 @@ certs/*.pem
 public/vendor/
 
 .task/
+
+# Per-project sub-agent transcript isolation
+.claude-subagents/
+.dev-server.json

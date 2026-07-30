@@ -147,31 +147,76 @@ async function handleRequest(req, res) {
 const HTTP_PORT = PORT + 1;
 const tls = loadTls();
 
-// --- Signaling: relay offer/answer/ICE between the two roles in a single room. ---
+// --- Signaling: WebRTC offer/answer/ICE between sender↔receiver, plus
+// laptop "controller" sockets that drive the phone without stealing the OBS slot. ---
 /** @type {Record<string, import('ws').WebSocket|null>} */
 const peers = { sender: null, receiver: null };
+/** @type {Set<import('ws').WebSocket>} */
+const controllers = new Set();
 
 function otherRole(role) {
   return role === "sender" ? "receiver" : "sender";
 }
+function isOpen(sock) {
+  return sock && sock.readyState === sock.OPEN;
+}
+function sendJson(sock, obj) {
+  if (isOpen(sock)) sock.send(JSON.stringify(obj));
+}
 function notifyPresence() {
+  // Sender/receiver only care about each other for WebRTC.
   for (const role of ["sender", "receiver"]) {
     const sock = peers[role];
-    if (sock && sock.readyState === sock.OPEN) {
+    if (isOpen(sock)) {
       sock.send(
         JSON.stringify({ type: "peer", present: !!peers[otherRole(role)] }),
       );
     }
+  }
+  // Controllers care whether the phone (sender) is online.
+  for (const c of controllers) {
+    sendJson(c, {
+      type: "peer",
+      present: !!peers.sender,
+      role: "sender",
+    });
+  }
+}
+function broadcastToControllers(raw) {
+  for (const c of controllers) {
+    if (isOpen(c)) c.send(raw);
   }
 }
 
 function handleWs(ws, req) {
   const url = new URL(req.url, "https://x");
   const role = url.searchParams.get("role");
-  if (role !== "sender" && role !== "receiver") {
+  if (role !== "sender" && role !== "receiver" && role !== "controller") {
     ws.close(1008, "role required");
     return;
   }
+
+  if (role === "controller") {
+    controllers.add(ws);
+    console.log(`[ws] controller connected (${controllers.size})`);
+    // Immediate presence so the laptop panel can enable/disable controls.
+    sendJson(ws, { type: "peer", present: !!peers.sender, role: "sender" });
+    // Ask the phone for a full state dump so the panel paints current values.
+    if (isOpen(peers.sender)) {
+      peers.sender.send(JSON.stringify({ type: "control", op: "getState" }));
+    }
+    ws.on("message", (data) => {
+      // Controllers only talk to the phone. Never touch the OBS receiver role.
+      if (isOpen(peers.sender)) peers.sender.send(data.toString());
+    });
+    ws.on("close", () => {
+      controllers.delete(ws);
+      console.log(`[ws] controller disconnected (${controllers.size})`);
+    });
+    ws.on("error", () => {});
+    return;
+  }
+
   // Newer connection of a role replaces the old one (e.g. phone reconnects).
   if (peers[role] && peers[role] !== ws) {
     try {
@@ -181,12 +226,36 @@ function handleWs(ws, req) {
   peers[role] = ws;
   console.log(`[ws] ${role} connected`);
   notifyPresence();
+  // Fresh phone → push state to any open laptop panels.
+  if (role === "sender" && controllers.size) {
+    setTimeout(() => {
+      if (isOpen(ws))
+        ws.send(JSON.stringify({ type: "control", op: "getState" }));
+    }, 200);
+  }
 
   ws.on("message", (data) => {
-    // Blind relay of signaling payloads to the other role.
-    const target = peers[otherRole(role)];
-    if (target && target.readyState === target.OPEN)
-      target.send(data.toString());
+    const raw = data.toString();
+    let msg;
+    try {
+      msg = JSON.parse(raw);
+    } catch {
+      return;
+    }
+
+    if (role === "sender") {
+      // Phone state updates go to every laptop controller.
+      if (msg.type === "state") {
+        broadcastToControllers(raw);
+        return;
+      }
+      // WebRTC offer/ICE → OBS receiver only.
+      if (isOpen(peers.receiver)) peers.receiver.send(raw);
+      return;
+    }
+
+    // Receiver answer/ICE → phone only.
+    if (isOpen(peers.sender)) peers.sender.send(raw);
   });
 
   ws.on("close", () => {

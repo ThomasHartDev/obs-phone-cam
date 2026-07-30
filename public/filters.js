@@ -23,6 +23,7 @@ export const DEFAULT_PARAMS = {
   soften: 0, // 0..1  undo iOS over-sharpening
   blur: 0, // 0..1  background blur (telephoto DOF, needs segmentation)
   mirror: false, // true = flip L/R (selfie-natural); false = true orientation
+  flipV: false, // true = flip top/bottom (upside-down mount / orientation fix)
   calib: false, // split-screen raw | graded
   split: 0.5, // wipe position when calib on
 };
@@ -79,6 +80,7 @@ uniform sampler2D uTex;
 uniform mat2 uInvRot;    // rotate output UV back into source orientation
 uniform float uSrcAspect;// source width/height (landscape sensor > 1)
 uniform float uMirror;   // +1 keep, -1 flip x
+uniform float uFlipV;    // +1 keep, -1 flip y
 uniform float uZoom;     // >=1 crop in
 uniform float uLens;     // barrel-correction strength
 uniform float uSlim;     // horizontal compression of the central band
@@ -104,7 +106,8 @@ vec2 sourceUv(vec2 uv) {
   float e = 2.0 * c.x;            // -1..1 across the width
   c.x *= (1.0 + uSlim * (1.0 - e * e));
   c = uInvRot * c;          // undo the canvas rotation
-  c.x *= uMirror;           // mirror in source space
+  c.x *= uMirror;           // mirror L/R in source space
+  c.y *= uFlipV;            // flip top/bottom
   c /= uZoom;               // crop toward center
   vec2 ca = c * vec2(uSrcAspect, 1.0);
   float r2 = dot(ca, ca);
@@ -161,6 +164,7 @@ void main() {
     // left of the wipe = untouched frame (rotation only), for before/after
     vec2 raw = uInvRot * (vUv - 0.5);
     raw.x *= uMirror;
+    raw.y *= uFlipV;
     gl_FragColor = vec4(texture2D(uTex, clamp(raw + 0.5, 0.0, 1.0)).rgb, 1.0);
     return;
   }
@@ -243,6 +247,7 @@ export class CameraFilter {
       "uInvRot",
       "uSrcAspect",
       "uMirror",
+      "uFlipV",
       "uZoom",
       "uLens",
       "uSlim",
@@ -310,6 +315,7 @@ export class CameraFilter {
 
     gl.uniform1f(this.u.uSrcAspect, vw / vh);
     gl.uniform1f(this.u.uMirror, p.mirror ? -1 : 1);
+    gl.uniform1f(this.u.uFlipV, p.flipV ? -1 : 1);
     gl.uniform1f(this.u.uZoom, p.zoom);
     gl.uniform1f(this.u.uLens, p.lens);
     gl.uniform1f(this.u.uSlim, p.slim || 0);
