@@ -15,6 +15,8 @@ if %errorlevel%==0 if not exist certs\cert.pem (
 )
 echo.
 echo  Phone Cam is starting. Your browser will open with the QR code.
+echo  After the phone is live, use that laptop page to Mirror / Flip V /
+echo  Rotate / filters / res / mic — no need to touch the phone again.
 echo  Leave this window open while you use it. Close it to stop.
 echo.
 node server.mjs

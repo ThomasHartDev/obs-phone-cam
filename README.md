@@ -34,11 +34,22 @@ npm start
 
 Then:
 
-1. Open `https://localhost:8443/` on the laptop — it shows a QR code and the OBS URL.
+1. Open `https://localhost:8443/` on the laptop — it shows a QR code, the OBS URL, and a **control panel**.
 2. Scan the QR with your iPhone (same Wi-Fi). Tap through the one-time cert warning, allow the camera.
-3. In OBS: **Sources → + → Browser**, URL `https://localhost:8443/receiver.html`, size = your canvas.
+3. In OBS: **Sources → + → Browser**, URL `http://localhost:8444/receiver.html` (plain http), size = your canvas.
+4. After the phone is live, leave it alone. Use the laptop control panel for everything else.
 
-The phone's HUD lets you flip front/back camera, pick a resolution, and toggle the mic.
+## Laptop remote control
+
+The landing page connects as a **controller** (not the OBS receiver), so you can change every option without touching the phone:
+
+- **Mirror** — horizontal flip (selfie-style)
+- **Flip V** — vertical flip (upside-down mount / orientation fix)
+- **Rotate 90°**, **Front/Back** camera, resolution, mic
+- All filter presets + sliders (exposure, temp, lens fix, slim, zoom, blur, …)
+- A/B hold (raw vs graded), calibrate wipe, reset
+
+Phone HUD still works; both stay in sync over the signaling WebSocket.
 
 ## Camera filters
 

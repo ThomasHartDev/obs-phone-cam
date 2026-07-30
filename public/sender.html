@@ -34,7 +34,8 @@
           <label>Background blur<input type="range" data-p="blur" min="0" max="1" step="0.01" /></label>
         </div>
         <div class="toggles">
-          <label><input id="mirror" type="checkbox" /> Mirror</label>
+          <label><input id="mirror" type="checkbox" /> Mirror (H)</label>
+          <label><input id="flipV" type="checkbox" /> Flip V</label>
           <label><input id="calib" type="checkbox" /> Calibrate (raw | you)</label>
           <button id="reset" type="button">Reset</button>
         </div>
@@ -44,7 +45,10 @@
         <button id="adjust" type="button" aria-pressed="false">Adjust</button>
         <button id="ab" type="button" title="hold to compare raw">A/B</button>
         <button id="rotate" type="button">Rotate</button>
-        <button id="flip" type="button">Flip camera</button>
+        <button id="mirrorBtn" type="button" aria-pressed="false" title="Mirror left/right">
+          Mirror
+        </button>
+        <button id="flip" type="button" title="Switch front/back camera">Front/Back</button>
         <select id="res" aria-label="Resolution">
           <option value="1280x720">720p</option>
           <option value="1920x1080" selected>1080p</option>
@@ -59,12 +63,14 @@
     <script type="module">
       import { Signal, RTC_CONFIG } from "/signal.js";
       import { CameraFilter, DEFAULT_PARAMS, PRESETS } from "/filters.js";
+      import { sanitizeParams } from "/control-panel.js";
 
       const raw = document.getElementById("raw");
       const canvas = document.getElementById("preview");
       const filter = new CameraFilter(canvas);
       const statusEl = document.getElementById("status");
       const flipBtn = document.getElementById("flip");
+      const mirrorBtn = document.getElementById("mirrorBtn");
       const rotateBtn = document.getElementById("rotate");
       const resSel = document.getElementById("res");
       const micBox = document.getElementById("mic");
@@ -92,7 +98,32 @@
       // what the shader actually renders this frame (A/B bypasses the grade)
       function activeParams() {
         if (!abHold) return params;
-        return { ...DEFAULT_PARAMS, mirror: params.mirror, lens: 0, zoom: 1 };
+        return {
+          ...DEFAULT_PARAMS,
+          mirror: params.mirror,
+          flipV: params.flipV,
+          lens: 0,
+          zoom: 1,
+        };
+      }
+
+      // Push current settings to any laptop controllers so the remote panel
+      // stays in lockstep with the phone (and vice versa).
+      function broadcastState() {
+        if (!sig) return;
+        sig.send({
+          type: "state",
+          params: { ...params },
+          facing,
+          rotationOffset,
+          res: resSel.value,
+          mic: micBox.checked,
+          abHold,
+          connectionState: pc?.connectionState || "new",
+          peerPresent,
+        });
+        // Reflect flip/mirror on the quick-access buttons.
+        mirrorBtn.setAttribute("aria-pressed", String(!!params.mirror));
       }
 
       let rawStream = null;
@@ -276,6 +307,7 @@
           else if (s === "connecting") setStatus("Connecting…");
           else if (s === "failed" || s === "disconnected")
             setStatus("Reconnecting…", "warn");
+          broadcastState();
         };
       }
 
@@ -300,32 +332,113 @@
           peerPresent = msg.present;
           if (peerPresent) offer();
           else setStatus("Waiting for OBS…", "warn");
+          broadcastState();
         } else if (msg.type === "answer") {
           await pc.setRemoteDescription(msg.sdp);
         } else if (msg.type === "ice" && pc) {
           try {
             await pc.addIceCandidate(msg.candidate);
           } catch {}
+        } else if (msg.type === "control") {
+          await applyControl(msg);
         }
       });
+
+      // Laptop remote-control ops. Same side effects as tapping the phone HUD.
+      async function applyControl(msg) {
+        const op = msg.op;
+        if (op === "getState") {
+          broadcastState();
+          return;
+        }
+        if (op === "params") {
+          Object.assign(params, sanitizeParams(msg.params));
+          syncUI();
+          saveParams();
+          markActivePreset("");
+          broadcastState();
+          return;
+        }
+        if (op === "preset" && PRESETS[msg.name]) {
+          applyPreset(msg.name);
+          broadcastState();
+          return;
+        }
+        if (op === "reset") {
+          applyPreset("True to Life");
+          broadcastState();
+          return;
+        }
+        if (op === "rotate") {
+          rotationOffset = (rotationOffset + 90) % 360;
+          broadcastState();
+          return;
+        }
+        if (op === "facing" && (msg.facing === "user" || msg.facing === "environment")) {
+          facing = msg.facing;
+          document.body.dataset.facing = facing;
+          await getCamera();
+          offer();
+          broadcastState();
+          return;
+        }
+        if (op === "flipCamera") {
+          facing = facing === "environment" ? "user" : "environment";
+          document.body.dataset.facing = facing;
+          await getCamera();
+          offer();
+          broadcastState();
+          return;
+        }
+        if (op === "res" && typeof msg.value === "string") {
+          resSel.value = msg.value;
+          await getCamera();
+          offer();
+          broadcastState();
+          return;
+        }
+        if (op === "mic") {
+          micBox.checked = !!msg.enabled;
+          await getCamera();
+          offer();
+          broadcastState();
+          return;
+        }
+        if (op === "ab") {
+          abHold = !!msg.hold;
+          broadcastState();
+          return;
+        }
+      }
 
       // Rotation and orientation change the canvas only — the sent track is the same
       // captureStream object, so no renegotiation is needed and the feed never blips.
       rotateBtn.onclick = () => {
         rotationOffset = (rotationOffset + 90) % 360;
+        broadcastState();
       };
       flipBtn.onclick = async () => {
         facing = facing === "environment" ? "user" : "environment";
+        document.body.dataset.facing = facing;
         await getCamera();
         offer();
+        broadcastState();
+      };
+      mirrorBtn.onclick = () => {
+        params.mirror = !params.mirror;
+        syncUI();
+        saveParams();
+        broadcastState();
       };
       resSel.onchange = async () => {
         await getCamera();
         offer();
+        broadcastState();
       };
       micBox.onchange = async () => {
         await getCamera();
         offer();
+        broadcastState();
       };
 
       // ---------- filter panel wiring ----------
@@ -333,6 +446,7 @@
       const adjustBtn = document.getElementById("adjust");
       const abBtn = document.getElementById("ab");
       const mirrorBox = document.getElementById("mirror");
+      const flipVBox = document.getElementById("flipV");
       const calibBox = document.getElementById("calib");
       const resetBtn = document.getElementById("reset");
       const sliders = [...panel.querySelectorAll("input[data-p]")];
@@ -341,7 +455,9 @@
       function syncUI() {
         for (const el of sliders) el.value = params[el.dataset.p];
         mirrorBox.checked = params.mirror;
+        flipVBox.checked = !!params.flipV;
         calibBox.checked = params.calib;
+        mirrorBtn.setAttribute("aria-pressed", String(!!params.mirror));
       }
       function applyPreset(name) {
         params = { ...PRESETS[name] };
@@ -359,7 +475,10 @@
         const chip = document.createElement("button");
         chip.type = "button";
         chip.textContent = name;
-        chip.onclick = () => applyPreset(name);
+        chip.onclick = () => {
+          applyPreset(name);
+          broadcastState();
+        };
         presetsEl.appendChild(chip);
       }
 
@@ -368,17 +487,28 @@
           params[el.dataset.p] = Number(el.value);
           saveParams();
           markActivePreset(""); // manual edit = no longer a named preset
+          broadcastState();
         };
       }
       mirrorBox.onchange = () => {
         params.mirror = mirrorBox.checked;
         saveParams();
+        broadcastState();
+      };
+      flipVBox.onchange = () => {
+        params.flipV = flipVBox.checked;
+        saveParams();
+        broadcastState();
       };
       calibBox.onchange = () => {
         params.calib = calibBox.checked;
         saveParams();
+        broadcastState();
       };
-      resetBtn.onclick = () => applyPreset("True to Life");
+      resetBtn.onclick = () => {
+        applyPreset("True to Life");
+        broadcastState();
+      };
       adjustBtn.onclick = () => {
         const open = panel.hasAttribute("hidden");
         panel.toggleAttribute("hidden", !open);
@@ -387,9 +517,11 @@
       // A/B: hold to peek the raw frame, release to return to your look
       const abDown = () => {
         abHold = true;
+        broadcastState();
       };
       const abUp = () => {
         abHold = false;
+        broadcastState();
       };
       abBtn.addEventListener("pointerdown", abDown);
       abBtn.addEventListener("pointerup", abUp);
@@ -397,11 +529,25 @@
       abBtn.addEventListener("pointercancel", abUp);
       syncUI();
 
+      // Expose for e2e / debugging (remote control path reads the same state).
+      document.body.dataset.facing = facing;
+      Object.defineProperty(window, "__obscam", {
+        get: () => ({
+          params: { ...params },
+          facing,
+          rotationOffset,
+          res: resSel.value,
+          mic: micBox.checked,
+          abHold,
+        }),
+      });
+
       (async () => {
         try {
           await getCamera();
           setStatus("Camera ready — waiting for OBS…", "warn");
           if (peerPresent) offer();
+          broadcastState();
         } catch (err) {
           setStatus("Camera blocked: " + err.message, "warn");
         }
