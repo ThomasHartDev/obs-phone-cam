@@ -1,12 +1,37 @@
-// Thin WebSocket signaling client shared by the sender and receiver pages.
+// Thin WebSocket signaling client shared by the sender, receiver, and laptop
+// controller pages.
 export class Signal extends EventTarget {
   constructor(role) {
     super();
     this.role = role;
     this.ws = null;
     this.reconnectMs = 500;
+    // Buffer messages that arrive before the page attaches `msg` listeners.
+    // Without this, the server's immediate presence push can be lost and the
+    // laptop panel stays stuck on "Waiting for phone" forever.
+    this._earlyMsgs = [];
+    this._msgListeners = 0;
     this.connect();
   }
+
+  addEventListener(type, listener, options) {
+    super.addEventListener(type, listener, options);
+    if (type === "msg") {
+      this._msgListeners++;
+      if (this._earlyMsgs.length) {
+        const queued = this._earlyMsgs.splice(0);
+        for (const msg of queued) {
+          super.dispatchEvent(new CustomEvent("msg", { detail: msg }));
+        }
+      }
+    }
+  }
+
+  removeEventListener(type, listener, options) {
+    super.removeEventListener(type, listener, options);
+    if (type === "msg") this._msgListeners = Math.max(0, this._msgListeners - 1);
+  }
+
   connect() {
     // ws:// when the page is served over http (OBS receiver), wss:// over https (phone).
     const proto = location.protocol === "https:" ? "wss" : "ws";
@@ -22,6 +47,10 @@ export class Signal extends EventTarget {
       try {
         msg = JSON.parse(e.data);
       } catch {
+        return;
+      }
+      if (this._msgListeners === 0) {
+        this._earlyMsgs.push(msg);
         return;
       }
       this.dispatchEvent(new CustomEvent("msg", { detail: msg }));
