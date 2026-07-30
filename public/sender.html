@@ -76,7 +76,23 @@
       const micBox = document.getElementById("mic");
 
       let facing = "environment"; // back camera by default — better for OBS scenes
-      let rotationOffset = 0; // manual 90° correction if auto guesses the wrong way
+      // Manual 90° steps only. Modern iOS already uprights the sensor frame;
+      // the old auto +90° on portrait made the feed sideways (needed 3×Rotate
+      // to cancel). Persist so a one-time tweak sticks across reloads.
+      const ROT_STORE = "obscam.rotationOffset";
+      let rotationOffset = loadRotationOffset();
+      function loadRotationOffset() {
+        try {
+          const n = Number(localStorage.getItem(ROT_STORE));
+          if (Number.isFinite(n) && n >= 0) return ((n % 360) + 360) % 360;
+        } catch {}
+        return 0;
+      }
+      function saveRotationOffset() {
+        try {
+          localStorage.setItem(ROT_STORE, String(rotationOffset));
+        } catch {}
+      }
 
       // Live filter params. Persisted so the phone remembers your look between
       // sessions. A/B "hold" temporarily renders the raw frame for comparison.
@@ -132,6 +148,8 @@
       let pc = null; // primary OBS receiver peer
       /** @type {Map<string, RTCPeerConnection>} */
       const viewerPcs = new Map(); // extra watchers
+      /** Viewers that joined before the camera stream was ready. */
+      const pendingViewers = new Set();
       let peerPresent = false;
 
       const setStatus = (t, cls = "") => {
@@ -139,19 +157,10 @@
         statusEl.className = "status " + cls;
       };
 
-      // iOS getUserMedia always hands out the landscape sensor frame and ignores a
-      // portrait request. So we take that landscape frame and rotate it to match how
-      // the phone is held: upright -> portrait, turned sideways -> landscape.
-      function deviceIsPortrait() {
-        if (screen.orientation && screen.orientation.type)
-          return screen.orientation.type.startsWith("portrait");
-        if (typeof window.orientation === "number")
-          return window.orientation === 0 || window.orientation === 180;
-        return window.innerHeight >= window.innerWidth;
-      }
+      // Canvas rotation is manual only (Rotate button / remote control). Safari
+      // already delivers an upright track for the common upright-phone case.
       function effectiveRotation() {
-        const base = deviceIsPortrait() ? 90 : 0; // rotate the landscape sensor upright
-        return (base + rotationOffset) % 360;
+        return ((rotationOffset % 360) + 360) % 360;
       }
 
       // Background blur needs a person mask. MediaPipe selfie segmentation runs
@@ -260,6 +269,8 @@
           // motion doesn't turn grainy.
           outStream.getVideoTracks().forEach((t) => (t.contentHint = "detail"));
         }
+        // Viewers that joined before the camera was ready.
+        await offerAllViewers();
       }
 
       // WebRTC caps video around ~2.5 Mbps by default, which starves the encoder on
@@ -332,7 +343,13 @@
 
       // Extra watchers (extra live preview). Same processed canvas as OBS.
       async function offerViewer(id) {
-        if (!outStream || !rawStream || !id) return;
+        if (!id) return;
+        // Viewers may connect before getUserMedia finishes — remember and retry.
+        if (!outStream || !rawStream) {
+          pendingViewers.add(id);
+          return;
+        }
+        pendingViewers.delete(id);
         const prev = viewerPcs.get(id);
         if (prev) {
           try {
@@ -358,7 +375,8 @@
       }
 
       async function offerAllViewers() {
-        for (const id of viewerPcs.keys()) await offerViewer(id);
+        for (const id of [...pendingViewers, ...viewerPcs.keys()])
+          await offerViewer(id);
       }
 
       const sig = new Signal("sender");
@@ -386,6 +404,7 @@
           if (msg.present) {
             await offerViewer(id);
           } else {
+            pendingViewers.delete(id);
             const v = viewerPcs.get(id);
             if (v) {
               try {
@@ -442,6 +461,7 @@
         }
         if (op === "rotate") {
           rotationOffset = (rotationOffset + 90) % 360;
+          saveRotationOffset();
           broadcastState();
           return;
         }
@@ -486,6 +506,7 @@
       // captureStream object, so no renegotiation is needed and the feed never blips.
       rotateBtn.onclick = () => {
         rotationOffset = (rotationOffset + 90) % 360;
+        saveRotationOffset();
         broadcastState();
       };
       flipBtn.onclick = async () => {
@@ -617,7 +638,8 @@
         try {
           await getCamera();
           setStatus("Camera ready — waiting for OBS…", "warn");
-          if (peerPresent) offer();
+          if (peerPresent) await offer();
+          await offerAllViewers();
           broadcastState();
         } catch (err) {
           setStatus("Camera blocked: " + err.message, "warn");
