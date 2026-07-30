@@ -280,9 +280,16 @@ body {
   max-height: none;
   background: rgba(10, 13, 18, 0.55);
 }
-.remote-panel.disabled {
-  opacity: 0.5;
-  pointer-events: none;
+/* Soft hint when phone is offline — controls stay clickable (flash a status). */
+.remote-panel.waiting {
+  outline: 1px dashed color-mix(in srgb, var(--warn) 50%, transparent);
+  outline-offset: 4px;
+}
+.remote-card h2 {
+  font-size: 1.15rem;
+}
+.remote-status {
+  font-weight: 600;
 }
 /* landing panel sits on the dark card, not over video */
 .landing .panel .presets button,

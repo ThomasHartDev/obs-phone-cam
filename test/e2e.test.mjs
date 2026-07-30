@@ -636,6 +636,35 @@ test("Flip V reverses top/bottom of a synthetic frame", async () => {
   await ctx.close();
 });
 
+test("laptop control panel is usable (not disabled) even before the phone links", async () => {
+  const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
+  const control = await ctx.newPage();
+  await control.goto(`${HTTPS_BASE}/`);
+  // Options must render immediately and stay clickable — greying them out
+  // looked like "no options" to the user.
+  await control.waitForSelector("#rcMirror:not([disabled])", { timeout: 10000 });
+  await control.waitForSelector('#rcPanel input[data-p="exposure"]:not([disabled])', {
+    timeout: 5000,
+  });
+  const labels = await control.evaluate(() =>
+    [...document.querySelectorAll("#rcPanel .sliders label")].map((l) =>
+      l.childNodes[0].textContent.trim(),
+    ),
+  );
+  assert.ok(labels.includes("Exposure"), `expected Exposure slider, got ${labels}`);
+  assert.ok(labels.includes("Zoom"), `expected Zoom slider, got ${labels}`);
+  // Clicking Mirror with no phone must not throw; status should mention phone.
+  await control.click("#rcMirror");
+  await control.waitForFunction(
+    () =>
+      document.getElementById("remoteStatus").textContent.toLowerCase().includes(
+        "phone",
+      ),
+    { timeout: 3000 },
+  );
+  await ctx.close();
+});
+
 test("Mirror button on the phone toggles horizontal flip param", async () => {
   const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
   const sender = await ctx.newPage();
