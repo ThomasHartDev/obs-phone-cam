@@ -15,8 +15,13 @@ the corrected feed actually looks like your real face. That's this document.
 ## Tests
 
 1. **Panel opens.** Tap **Adjust**. → Expected: the settings panel slides up
-   with 5 preset chips, 9 sliders, Mirror / Calibrate toggles, Reset.
+   with preset chips, sliders, Mirror (H) / Flip V / Calibrate toggles, Reset.
    Pass / Fail: ____
+
+1b. **Laptop remote.** With the phone live, open `https://localhost:8443/` on
+    the laptop. → Expected: section **3. Control from this computer** shows
+    “Phone live…”, Mirror / Flip V / Rotate / Front/Back / sliders all work,
+    and OBS updates without touching the phone. Pass / Fail: ____
 
 2. **Preset applies live.** Tap **Warm Studio**. → Expected: feed warms and
    brightens immediately, no freeze/blip in OBS, sliders jump to the preset's

@@ -1,6 +1,6 @@
 {
   "name": "obs-phone-cam",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "description": "Use your iPhone as a low-latency camera source in OBS over your local network. No app install, no per-month fee.",
