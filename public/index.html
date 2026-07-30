@@ -13,6 +13,43 @@
         Your iPhone as an OBS camera source. Same Wi-Fi, no app to install.
       </p>
 
+      <!-- Controls first: this is what you use every session after setup. -->
+      <section class="card remote-card" id="controls">
+        <h2>Camera controls (this laptop)</h2>
+        <p class="note" style="margin-top: 0">
+          Leave the phone on the stand. Mirror, flip, rotate, filters,
+          resolution, and mic all live here. OBS keeps the Browser Source;
+          this page only talks to the phone.
+        </p>
+        <div id="remoteStatus" class="remote-status warn" role="status">
+          Connecting…
+        </div>
+
+        <div class="remote-actions">
+          <button id="rcMirror" type="button" aria-pressed="false" title="Mirror left/right">
+            Mirror
+          </button>
+          <button id="rcFlipV" type="button" aria-pressed="false" title="Flip top/bottom">
+            Flip V
+          </button>
+          <button id="rcRotate" type="button">Rotate 90°</button>
+          <button id="rcFlipCam" type="button" title="Switch front/back camera">
+            Front/Back
+          </button>
+          <button id="rcAb" type="button" title="Hold to compare raw">A/B</button>
+          <select id="rcRes" aria-label="Resolution">
+            <option value="1280x720">720p</option>
+            <option value="1920x1080" selected>1080p</option>
+            <option value="3840x2160">4K</option>
+          </select>
+          <label class="mic"
+            ><input id="rcMic" type="checkbox" checked /> Mic</label
+          >
+        </div>
+
+        <div id="rcPanel" class="panel remote-panel"></div>
+      </section>
+
       <section class="card">
         <h2>1. Scan on your iPhone</h2>
         <img
@@ -51,44 +88,8 @@
         </p>
       </section>
 
-      <section class="card remote-card">
-        <h2>3. Control from this computer</h2>
-        <p class="note" style="margin-top: 0">
-          After the phone is live, leave it alone. Every camera option lives
-          here — flip, filters, resolution, mic. OBS keeps showing the
-          Browser Source; this panel only sends commands to the phone.
-        </p>
-        <div id="remoteStatus" class="remote-status warn">
-          Waiting for phone…
-        </div>
-
-        <div class="remote-actions">
-          <button id="rcMirror" type="button" aria-pressed="false" title="Mirror left/right">
-            Mirror
-          </button>
-          <button id="rcFlipV" type="button" aria-pressed="false" title="Flip top/bottom">
-            Flip V
-          </button>
-          <button id="rcRotate" type="button">Rotate 90°</button>
-          <button id="rcFlipCam" type="button" title="Switch front/back camera">
-            Front/Back
-          </button>
-          <button id="rcAb" type="button" title="Hold to compare raw">A/B</button>
-          <select id="rcRes" aria-label="Resolution">
-            <option value="1280x720">720p</option>
-            <option value="1920x1080" selected>1080p</option>
-            <option value="3840x2160">4K</option>
-          </select>
-          <label class="mic"
-            ><input id="rcMic" type="checkbox" checked /> Mic</label
-          >
-        </div>
-
-        <div id="rcPanel" class="panel remote-panel"></div>
-      </section>
-
       <section class="card">
-        <h2>4. Use it as a camera device</h2>
+        <h2>3. Use it as a camera device</h2>
         <p>
           In OBS, right side under <strong>Controls</strong>, click
           <strong>Start Virtual Camera</strong>.
@@ -151,38 +152,39 @@
       let lastState = null;
       // Avoid feedback loops: when we paint state from the phone, skip re-sending.
       let applyingRemote = false;
+      let statusFlashTimer = 0;
 
       function setRemoteStatus(text, cls = "") {
         statusEl.textContent = text;
         statusEl.className = "remote-status " + cls;
       }
 
-      function setControlsEnabled(on) {
-        panelRoot.classList.toggle("disabled", !on);
-        for (const el of [
-          mirrorBtn,
-          flipVBtn,
-          rotateBtn,
-          flipCamBtn,
-          abBtn,
-          resSel,
-          micBox,
-          ...ui.sliders,
-          ui.mirror,
-          ui.flipV,
-          ui.calib,
-          ui.reset,
-          ...ui.presets.querySelectorAll("button"),
-        ]) {
-          if (!el) continue;
-          el.disabled = !on;
-        }
+      function flashStatus(text, cls = "warn", ms = 2200) {
+        const prev = statusEl.textContent;
+        const prevCls = statusEl.className;
+        setRemoteStatus(text, cls);
+        clearTimeout(statusFlashTimer);
+        statusFlashTimer = setTimeout(() => {
+          // Only restore if nothing more important replaced us.
+          if (statusEl.textContent === text) {
+            statusEl.textContent = prev;
+            statusEl.className = prevCls;
+          }
+        }, ms);
       }
-      setControlsEnabled(false);
 
+      // Controls stay clickable always. Greyed-out disabled UI looked like
+      // "there are no options" when the phone hadn't linked yet.
       function send(msg) {
-        if (!phonePresent) return;
+        if (!phonePresent) {
+          flashStatus(
+            "Phone not connected — open the sender page on your iPhone first",
+            "warn",
+          );
+          return false;
+        }
         sig.send(msg);
+        return true;
       }
 
       function paintState(state) {
@@ -208,7 +210,7 @@
             state.facing === "user" ? "front cam" : "back cam";
           if (live) {
             setRemoteStatus(
-              `Phone live · ${facing} · ${state.res || "—"}`,
+              `Phone live · ${facing} · ${state.res || "—"} · adjust anything below`,
               "live",
             );
           } else if (phonePresent) {
@@ -217,42 +219,73 @@
               "warn",
             );
           }
+          document.body.dataset.phone = phonePresent ? "1" : "0";
         } finally {
           applyingRemote = false;
         }
       }
 
+      function markPhone(present) {
+        phonePresent = !!present;
+        document.body.dataset.phone = phonePresent ? "1" : "0";
+        panelRoot.classList.toggle("waiting", !phonePresent);
+        if (!phonePresent) {
+          setRemoteStatus(
+            "Waiting for phone — scan the QR below, then use these controls",
+            "warn",
+          );
+          lastState = null;
+        } else {
+          setRemoteStatus("Phone connected — loading settings…", "warn");
+          sig.send({ type: "control", op: "getState" });
+        }
+      }
+
+      // Attach listeners BEFORE any early buffered messages are flushed.
+      // Signal buffers presence that arrives during construction.
       const sig = new Signal("controller");
       sig.addEventListener("msg", ({ detail: msg }) => {
-        if (msg.type === "peer" && msg.role === "sender") {
-          phonePresent = !!msg.present;
-          setControlsEnabled(phonePresent);
-          if (!phonePresent) {
-            setRemoteStatus("Waiting for phone…", "warn");
-            lastState = null;
-          } else {
-            setRemoteStatus("Phone connected — loading settings…", "warn");
-            send({ type: "control", op: "getState" });
-          }
+        if (msg.type === "peer" && (msg.role === "sender" || msg.role == null)) {
+          // role is always "sender" for controller presence; tolerate older servers
+          markPhone(!!msg.present);
         } else if (msg.type === "state") {
           phonePresent = true;
-          setControlsEnabled(true);
+          document.body.dataset.phone = "1";
+          panelRoot.classList.remove("waiting");
           paintState(msg);
         }
       });
       sig.addEventListener("open", () => {
-        // Re-ask state on reconnect.
-        if (phonePresent) send({ type: "control", op: "getState" });
+        setRemoteStatus(
+          phonePresent
+            ? "Reconnected — loading settings…"
+            : "Waiting for phone — scan the QR below, then use these controls",
+          "warn",
+        );
+        // Always re-ask; phone may already be in the room.
+        sig.send({ type: "control", op: "getState" });
       });
+      sig.addEventListener("close", () => {
+        // Transient; auto-reconnect. Don't clear phonePresent aggressively.
+      });
+
+      // Periodic state poll while online — recovers from any missed message.
+      setInterval(() => {
+        if (phonePresent) sig.send({ type: "control", op: "getState" });
+      }, 4000);
 
       // Quick-access buttons
       mirrorBtn.onclick = () => {
         const next = !(lastState?.params?.mirror);
-        send({ type: "control", op: "params", params: { mirror: next } });
+        if (send({ type: "control", op: "params", params: { mirror: next } })) {
+          mirrorBtn.setAttribute("aria-pressed", String(next));
+        }
       };
       flipVBtn.onclick = () => {
         const next = !(lastState?.params?.flipV);
-        send({ type: "control", op: "params", params: { flipV: next } });
+        if (send({ type: "control", op: "params", params: { flipV: next } })) {
+          flipVBtn.setAttribute("aria-pressed", String(next));
+        }
       };
       rotateBtn.onclick = () => send({ type: "control", op: "rotate" });
       flipCamBtn.onclick = () => send({ type: "control", op: "flipCamera" });
@@ -326,7 +359,12 @@
         get phonePresent() {
           return phonePresent;
         },
-        send,
+        send: (msg) => {
+          // Tests call this directly; bypass the offline flash.
+          if (!phonePresent) return false;
+          sig.send(msg);
+          return true;
+        },
       };
     </script>
   </body>
