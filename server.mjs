@@ -148,11 +148,15 @@ const HTTP_PORT = PORT + 1;
 const tls = loadTls();
 
 // --- Signaling: WebRTC offer/answer/ICE between sender↔receiver, plus
-// laptop "controller" sockets that drive the phone without stealing the OBS slot. ---
+// laptop "controller" sockets and multi "viewer" sockets (live preview).
+// Viewers never replace the OBS receiver slot. ---
 /** @type {Record<string, import('ws').WebSocket|null>} */
 const peers = { sender: null, receiver: null };
 /** @type {Set<import('ws').WebSocket>} */
 const controllers = new Set();
+/** @type {Map<string, import('ws').WebSocket>} */
+const viewers = new Map();
+let nextViewerId = 1;
 
 function otherRole(role) {
   return role === "sender" ? "receiver" : "sender";
@@ -164,7 +168,7 @@ function sendJson(sock, obj) {
   if (isOpen(sock)) sock.send(JSON.stringify(obj));
 }
 function notifyPresence() {
-  // Sender/receiver only care about each other for WebRTC.
+  // Sender/receiver only care about each other for the primary OBS path.
   for (const role of ["sender", "receiver"]) {
     const sock = peers[role];
     if (isOpen(sock)) {
@@ -187,11 +191,23 @@ function broadcastToControllers(raw) {
     if (isOpen(c)) c.send(raw);
   }
 }
+/** Tell the phone about every live viewer (used on phone connect + join). */
+function syncViewersToSender() {
+  if (!isOpen(peers.sender)) return;
+  for (const id of viewers.keys()) {
+    peers.sender.send(JSON.stringify({ type: "viewer", id, present: true }));
+  }
+}
 
 function handleWs(ws, req) {
   const url = new URL(req.url, "https://x");
   const role = url.searchParams.get("role");
-  if (role !== "sender" && role !== "receiver" && role !== "controller") {
+  if (
+    role !== "sender" &&
+    role !== "receiver" &&
+    role !== "controller" &&
+    role !== "viewer"
+  ) {
     ws.close(1008, "role required");
     return;
   }
@@ -217,6 +233,39 @@ function handleWs(ws, req) {
     return;
   }
 
+  // Extra watchers (extra live preview). Many OK; never kick OBS.
+  if (role === "viewer") {
+    const id = String(nextViewerId++);
+    viewers.set(id, ws);
+    ws._viewerId = id;
+    console.log(`[ws] viewer ${id} connected (${viewers.size})`);
+    if (isOpen(peers.sender)) {
+      peers.sender.send(JSON.stringify({ type: "viewer", id, present: true }));
+    }
+    ws.on("message", (data) => {
+      // Tag answer/ICE with peerId so the phone routes to the right PeerConnection.
+      let msg;
+      try {
+        msg = JSON.parse(data.toString());
+      } catch {
+        return;
+      }
+      msg.peerId = id;
+      if (isOpen(peers.sender)) peers.sender.send(JSON.stringify(msg));
+    });
+    ws.on("close", () => {
+      if (viewers.get(id) === ws) viewers.delete(id);
+      console.log(`[ws] viewer ${id} disconnected (${viewers.size})`);
+      if (isOpen(peers.sender)) {
+        peers.sender.send(
+          JSON.stringify({ type: "viewer", id, present: false }),
+        );
+      }
+    });
+    ws.on("error", () => {});
+    return;
+  }
+
   // Newer connection of a role replaces the old one (e.g. phone reconnects).
   if (peers[role] && peers[role] !== ws) {
     try {
@@ -226,12 +275,15 @@ function handleWs(ws, req) {
   peers[role] = ws;
   console.log(`[ws] ${role} connected`);
   notifyPresence();
-  // Fresh phone → push state to any open laptop panels.
-  if (role === "sender" && controllers.size) {
-    setTimeout(() => {
-      if (isOpen(ws))
-        ws.send(JSON.stringify({ type: "control", op: "getState" }));
-    }, 200);
+  // Fresh phone → push state to any open laptop panels + re-attach viewers.
+  if (role === "sender") {
+    if (controllers.size) {
+      setTimeout(() => {
+        if (isOpen(ws))
+          ws.send(JSON.stringify({ type: "control", op: "getState" }));
+      }, 200);
+    }
+    setTimeout(() => syncViewersToSender(), 250);
   }
 
   ws.on("message", (data) => {
@@ -249,12 +301,17 @@ function handleWs(ws, req) {
         broadcastToControllers(raw);
         return;
       }
-      // WebRTC offer/ICE → OBS receiver only.
+      // WebRTC offer/ICE: peerId routes to a viewer; otherwise OBS receiver.
+      if (msg.peerId) {
+        const v = viewers.get(String(msg.peerId));
+        if (isOpen(v)) v.send(raw);
+        return;
+      }
       if (isOpen(peers.receiver)) peers.receiver.send(raw);
       return;
     }
 
-    // Receiver answer/ICE → phone only.
+    // Receiver answer/ICE → phone only (no peerId = primary OBS path).
     if (isOpen(peers.sender)) peers.sender.send(raw);
   });
 

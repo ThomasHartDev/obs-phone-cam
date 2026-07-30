@@ -636,6 +636,41 @@ test("Flip V reverses top/bottom of a synthetic frame", async () => {
   await ctx.close();
 });
 
+test("viewer role receives the same live frames without kicking OBS receiver", async () => {
+  const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
+  const receiver = await ctx.newPage();
+  await receiver.goto(`${HTTP_BASE}/receiver.html`);
+  const sender = await ctx.newPage();
+  await sender.goto(`${HTTPS_BASE}/sender.html`);
+  await receiver.waitForFunction(
+    () => {
+      const v = document.getElementById("feed");
+      return v && v.srcObject && v.videoWidth > 0;
+    },
+    { timeout: 20000 },
+  );
+
+  // extra watcher — must not replace the OBS receiver slot.
+  const viewer = await ctx.newPage();
+  await viewer.goto(`${HTTPS_BASE}/viewer.html`);
+  await viewer.waitForFunction(
+    () => {
+      const v = document.getElementById("feed");
+      return v && v.srcObject && v.videoWidth > 0;
+    },
+    { timeout: 20000 },
+  );
+
+  // OBS path still live after the viewer joined.
+  const obsStill = await receiver.evaluate(() => {
+    const v = document.getElementById("feed");
+    return !!(v && v.srcObject && v.videoWidth > 0);
+  });
+  assert.equal(obsStill, true, "OBS receiver must keep frames after viewer joins");
+
+  await ctx.close();
+});
+
 test("laptop control panel is usable (not disabled) even before the phone links", async () => {
   const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
   const control = await ctx.newPage();
