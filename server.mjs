@@ -179,9 +179,8 @@ async function handleRequest(req, res) {
       .end(JSON.stringify({ ips: lanIps(), port: PORT, httpPort: HTTP_PORT }));
     return;
   }
-  // HTTP control path for remote laptop UIs (browser cannot open wss://localhost
-  // from a public HTTPS origin — Chrome Private Network Access). Server-side
-  // A remote UI can POST here when the browser cannot open a WebSocket to localhost.
+  // HTTP control path. Browsers on a public HTTPS origin cannot open
+  // wss://localhost (Chrome Private Network Access), so they POST here instead.
   if (url.pathname === "/control" && req.method === "POST") {
     let body;
     try {
@@ -327,7 +326,7 @@ function handleWs(ws, req) {
     return;
   }
 
-  // Extra watchers (extra live preview). Many OK; never kick OBS.
+  // Extra watchers. Many OK; never kick OBS.
   if (role === "viewer") {
     const id = String(nextViewerId++);
     viewers.set(id, ws);

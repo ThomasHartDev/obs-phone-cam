@@ -341,7 +341,7 @@
         await offerAllViewers();
       }
 
-      // Extra watchers (extra live preview). Same processed canvas as OBS.
+      // Extra watchers. Same processed canvas as OBS.
       async function offerViewer(id) {
         if (!id) return;
         // Viewers may connect before getUserMedia finishes — remember and retry.
