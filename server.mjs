@@ -229,6 +229,7 @@ async function handleRequest(req, res) {
         JSON.stringify({
           ok: true,
           phonePresent: !!peers.sender,
+          boardPresent: !!peers.board,
           state: lastPhoneState,
         }),
       );
@@ -244,7 +245,13 @@ const tls = loadTls();
 // laptop "controller" sockets and multi "viewer" sockets (live preview).
 // Viewers never replace the OBS receiver slot. ---
 /** @type {Record<string, import('ws').WebSocket|null>} */
-const peers = { sender: null, receiver: null };
+const peers = { sender: null, receiver: null, board: null, boardReceiver: null };
+const PAIR = {
+  sender: "receiver",
+  receiver: "sender",
+  board: "boardReceiver",
+  boardReceiver: "board",
+};
 /** @type {Set<import('ws').WebSocket>} */
 const controllers = new Set();
 /** @type {Map<string, import('ws').WebSocket>} */
@@ -252,7 +259,7 @@ const viewers = new Map();
 let nextViewerId = 1;
 
 function otherRole(role) {
-  return role === "sender" ? "receiver" : "sender";
+  return PAIR[role] || null;
 }
 function isOpen(sock) {
   return sock && sock.readyState === sock.OPEN;
@@ -261,8 +268,7 @@ function sendJson(sock, obj) {
   if (isOpen(sock)) sock.send(JSON.stringify(obj));
 }
 function notifyPresence() {
-  // Sender/receiver only care about each other for the primary OBS path.
-  for (const role of ["sender", "receiver"]) {
+  for (const role of Object.keys(PAIR)) {
     const sock = peers[role];
     if (isOpen(sock)) {
       sock.send(
@@ -298,6 +304,8 @@ function handleWs(ws, req) {
   if (
     role !== "sender" &&
     role !== "receiver" &&
+    role !== "board" &&
+    role !== "boardReceiver" &&
     role !== "controller" &&
     role !== "viewer"
   ) {
@@ -389,13 +397,11 @@ function handleWs(ws, req) {
     }
 
     if (role === "sender") {
-      // Phone state updates go to every laptop controller + HTTP pollers.
       if (msg.type === "state") {
         lastPhoneState = msg;
         broadcastToControllers(raw);
         return;
       }
-      // WebRTC offer/ICE: peerId routes to a viewer; otherwise OBS receiver.
       if (msg.peerId) {
         const v = viewers.get(String(msg.peerId));
         if (isOpen(v)) v.send(raw);
@@ -405,7 +411,15 @@ function handleWs(ws, req) {
       return;
     }
 
-    // Receiver answer/ICE → phone only (no peerId = primary OBS path).
+    if (role === "board") {
+      if (isOpen(peers.boardReceiver)) peers.boardReceiver.send(raw);
+      return;
+    }
+    if (role === "boardReceiver") {
+      if (isOpen(peers.board)) peers.board.send(raw);
+      return;
+    }
+
     if (isOpen(peers.sender)) peers.sender.send(raw);
   });
 
@@ -474,10 +488,15 @@ httpsServer.listen(PORT, "0.0.0.0", () => {
   console.log(`    https://localhost:${PORT}/\n`);
   console.log("  On the iPhone (same Wi-Fi), open the sender page:");
   for (const ip of ips) console.log(`    https://${ip}:${PORT}/sender.html`);
+  console.log("  On the iPad, open the whiteboard:");
+  for (const ip of ips) console.log(`    https://${ip}:${PORT}/board.html`);
   console.log(
     "\n  In OBS: add a Browser Source pointing at (plain http — no cert warning):",
   );
-  console.log(`    http://localhost:${HTTP_PORT}/receiver.html\n`);
+  console.log(`    http://localhost:${HTTP_PORT}/receiver.html`);
+  console.log(
+    `    http://localhost:${HTTP_PORT}/board-receiver.html  (iPad board)\n`,
+  );
   openBrowser(`https://localhost:${PORT}/`);
 });
 httpServer.listen(HTTP_PORT, "0.0.0.0", () => {});

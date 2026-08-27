@@ -1,23 +1,22 @@
 # obs-phone-cam
 
-Use your iPhone as a low-latency camera source in OBS over your local network. No app to install on the phone, no monthly fee. The phone just opens a page in Safari.
+Use your iPhone as a low-latency camera source in OBS, and an iPad as a live whiteboard, over your local network. No app to install, no monthly fee. Each device just opens a page in Safari.
 
-This is a free replacement for the Camo / Iriun / EpocCam class of apps, built on WebRTC + an OBS Browser Source.
+This is a free replacement for the Camo / Iriun / EpocCam class of apps, built on WebRTC + OBS Browser Sources.
 
 ## How it works
 
 ```
-iPhone (Safari)                     Laptop (OBS)
- sender.html                         receiver.html  ──► OBS Browser Source
- getUserMedia(camera) ──WebRTC P2P over your LAN──►  <video> fullscreen
-        │                                   │
-        └──────── WS signaling relay ───────┘
-                  (server.mjs, HTTPS)
+iPhone Safari  sender.html   ──WebRTC──►  OBS  receiver.html        (camera)
+iPad   Safari  board.html    ──WebRTC──►  OBS  board-receiver.html  (whiteboard)
+                     │                          │
+                     └──── WS signaling relay ──┘
+                           (server.mjs, HTTPS)
 ```
 
 - **`server.mjs`** serves the pages over HTTPS and relays WebRTC signaling. HTTPS is required: iOS Safari blocks camera access on a LAN IP unless it's a secure context.
 - The phone and OBS connect **peer to peer** on your Wi-Fi (Google STUN for ICE, no TURN needed on the same network), so the video never round-trips through a server.
-- OBS renders the receiver page as a **Browser Source**. Click **Start Virtual Camera** in OBS to also use it as a webcam in Zoom/Teams.
+- OBS renders each receiver page as a **Browser Source**. Click **Start Virtual Camera** in OBS to also use the phone as a webcam in Zoom/Teams. The iPad board is a second source you can chroma-key or place beside the camera.
 
 ## Run it
 
@@ -38,6 +37,9 @@ Then:
 2. Scan the QR with your iPhone (same Wi-Fi). Tap through the one-time cert warning, allow the camera.
 3. In OBS: **Sources → + → Browser**, URL `http://localhost:8444/receiver.html` (plain http), size = your canvas.
 4. After the phone is live, leave it alone. Use the laptop control panel for everything else.
+5. Optional: scan the **iPad board** QR. Add a second OBS Browser Source at `http://localhost:8444/board-receiver.html`. Draw on the iPad (Apple Pencil works). The camera source is unchanged.
+
+Safari on iPad cannot share another app's screen, so the board page itself is the drawing surface. Pick **Green (chroma)** paper if you want to key the drawing over the camera in OBS. On a desktop browser that supports window share, the board page also has **Share window** for a real Excalidraw tab.
 
 ## Laptop remote control
 
