@@ -10,7 +10,8 @@
     <main>
       <h1>obs-phone-cam</h1>
       <p class="sub">
-        Your iPhone as an OBS camera source. Same Wi-Fi, no app to install.
+        iPhone camera and iPad whiteboard as OBS sources. Same Wi-Fi, no app to
+        install.
       </p>
 
       <!-- Controls first: this is what you use every session after setup. -->
@@ -89,7 +90,37 @@
       </section>
 
       <section class="card">
-        <h2>3. Use it as a camera device</h2>
+        <h2>3. Draw on an iPad</h2>
+        <p class="note" style="margin-top: 0">
+          Safari on iPad cannot share another app’s screen, so this page
+          <em>is</em> the drawing surface (Excalidraw-style pen, shapes, Apple
+          Pencil). Keep it open while you draw. The iPhone camera keeps running
+          on its own OBS source.
+        </p>
+        <img
+          id="boardQr"
+          alt="QR code to open the iPad board"
+          width="240"
+          height="240"
+        />
+        <p class="mono" id="boardUrl">…</p>
+        <p>
+          Second OBS Browser Source URL:
+        </p>
+        <p class="mono" id="obsBoardUrl">…</p>
+        <button id="copyObsBoard" type="button" class="copybtn">
+          Copy iPad OBS URL
+        </button>
+        <p class="note">
+          Size that source to your canvas (1920×1080 is a good start). Paper
+          <strong>Green (chroma)</strong> on the iPad lets you key the drawing
+          over the camera in OBS. On a laptop, <strong>Share window</strong>
+          can send a real Excalidraw tab if the browser supports it.
+        </p>
+      </section>
+
+      <section class="card">
+        <h2>4. Use it as a camera device</h2>
         <p>
           In OBS, right side under <strong>Controls</strong>, click
           <strong>Start Virtual Camera</strong>.
@@ -116,17 +147,29 @@
       );
       const ip = ips[0] || location.hostname;
       const senderUrl = `https://${ip}:${port}/sender.html`;
+      const boardUrl = `https://${ip}:${port}/board.html`;
       // OBS loads over plain http (its CEF browser won't accept the self-signed https cert)
       const obsUrl = `http://localhost:${httpPort}/receiver.html`;
+      const obsBoardUrl = `http://localhost:${httpPort}/board-receiver.html`;
       document.getElementById("qr").src =
         "/qr?url=" + encodeURIComponent(senderUrl);
       document.getElementById("senderUrl").textContent = senderUrl;
       document.getElementById("obsUrl").textContent = obsUrl;
+      document.getElementById("boardQr").src =
+        "/qr?url=" + encodeURIComponent(boardUrl);
+      document.getElementById("boardUrl").textContent = boardUrl;
+      document.getElementById("obsBoardUrl").textContent = obsBoardUrl;
       const copyBtn = document.getElementById("copyObs");
       copyBtn.onclick = async () => {
         await navigator.clipboard?.writeText(obsUrl);
         copyBtn.textContent = "Copied ✓";
         setTimeout(() => (copyBtn.textContent = "Copy OBS URL"), 1500);
+      };
+      const copyBoardBtn = document.getElementById("copyObsBoard");
+      copyBoardBtn.onclick = async () => {
+        await navigator.clipboard?.writeText(obsBoardUrl);
+        copyBoardBtn.textContent = "Copied ✓";
+        setTimeout(() => (copyBoardBtn.textContent = "Copy iPad OBS URL"), 1500);
       };
       const others = ips.slice(1);
       if (others.length) {

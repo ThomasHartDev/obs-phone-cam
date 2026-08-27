@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no"
+    />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <title>Phone Cam — iPad board</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body class="board">
+    <canvas id="board"></canvas>
+    <div class="board-hud">
+      <div id="status" class="status">Starting board…</div>
+      <div class="board-tools">
+        <button type="button" data-tool="pen" aria-pressed="true">Pen</button>
+        <button type="button" data-tool="highlighter" aria-pressed="false">Hi</button>
+        <button type="button" data-tool="eraser" aria-pressed="false">Erase</button>
+        <button type="button" data-tool="line" aria-pressed="false">Line</button>
+        <button type="button" data-tool="rect" aria-pressed="false">Rect</button>
+        <button type="button" data-tool="ellipse" aria-pressed="false">Oval</button>
+        <button type="button" data-tool="arrow" aria-pressed="false">Arrow</button>
+        <button type="button" data-tool="text" aria-pressed="false">Text</button>
+        <span id="swatches" class="swatches"></span>
+        <label class="width-label"
+          >Size<input id="width" type="range" min="2" max="18" step="1" value="4"
+        /></label>
+        <select id="paper" aria-label="Paper">
+          <option value="white">White</option>
+          <option value="grid">Grid</option>
+          <option value="green">Green (chroma)</option>
+          <option value="dark">Dark</option>
+        </select>
+        <button type="button" id="undoBtn">Undo</button>
+        <button type="button" id="redoBtn">Redo</button>
+        <button type="button" id="clearBtn">Clear</button>
+        <button type="button" id="shareBtn" hidden aria-pressed="false">
+          Share window
+        </button>
+      </div>
+    </div>
+    <script type="module" src="/board.js"></script>
+  </body>
+</html>

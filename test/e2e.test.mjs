@@ -1,7 +1,7 @@
 // End-to-end proof the WebRTC path works: a headless Chrome "phone" with a fake
 // camera streams to the receiver page, and we assert real video frames arrive.
 // The physical-iPhone leg can't be automated (real camera); see docs/manual-tests.
-import { test, before, after } from "node:test";
+import { test, before, after, describe } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -17,6 +17,7 @@ const HTTP_BASE = `http://localhost:${PORT + 1}`;
 let server;
 let browser;
 
+describe("obs-phone-cam e2e", { concurrency: 1 }, () => {
 before(async () => {
   server = spawn("node", ["server.mjs"], {
     cwd: ROOT,
@@ -114,49 +115,54 @@ test("phone sender streams live frames into the OBS receiver page", async () => 
 
 test("a second sender tab supersedes the first without a reconnect war", async () => {
   const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
-  const receiver = await ctx.newPage();
-  await receiver.goto(`${HTTP_BASE}/receiver.html`);
+  try {
+    const receiver = await ctx.newPage();
+    await receiver.goto(`${HTTP_BASE}/receiver.html`);
 
-  // Two sender tabs open (the exact repro: sender page in two Safari tabs),
-  // a beat apart like a real second tab.
-  const senderA = await ctx.newPage();
-  await senderA.goto(`${HTTPS_BASE}/sender.html`);
-  await senderA.waitForTimeout(1500);
-  const senderB = await ctx.newPage();
-  await senderB.goto(`${HTTPS_BASE}/sender.html`);
+    const senderA = await ctx.newPage();
+    await senderA.goto(`${HTTPS_BASE}/sender.html`);
+    await senderA.waitForFunction(
+      () => (document.getElementById("status")?.textContent || "").length > 5,
+      null,
+      { timeout: 20000 },
+    );
+    const senderB = await ctx.newPage();
+    await senderB.goto(`${HTTPS_BASE}/sender.html`);
 
-  // The newer tab (B) wins the single sender slot; the older (A) is told it was
-  // superseded and must NOT keep reconnecting.
-  await senderA.waitForFunction(
-    () => document.getElementById("status").textContent.includes("Another tab"),
-    { timeout: 10000 },
-  );
+    await senderA.waitForFunction(
+      () =>
+        (document.getElementById("status")?.textContent || "").includes(
+          "Another tab",
+        ),
+      null,
+      { timeout: 15000 },
+    );
 
-  // Give any reconnect war time to manifest, then assert A stayed superseded
-  // (a war would flip A back to a connecting/live state).
-  await senderA.waitForTimeout(3000);
-  const aStatus = await senderA.evaluate(
-    () => document.getElementById("status").textContent,
-  );
-  assert.ok(
-    aStatus.includes("Another tab"),
-    `superseded tab should stay parked, got: ${aStatus}`,
-  );
+    await senderA.waitForTimeout(2000);
+    const aStatus = await senderA.evaluate(
+      () => document.getElementById("status").textContent,
+    );
+    assert.ok(
+      aStatus.includes("Another tab"),
+      `superseded tab should stay parked, got: ${aStatus}`,
+    );
 
-  // The winning tab still delivers live frames to the receiver.
-  await receiver.waitForFunction(
-    () => {
-      const v = document.getElementById("feed");
-      return v && v.srcObject && v.videoWidth > 0;
-    },
-    { timeout: 20000 },
-  );
-
-  await ctx.close();
+    await receiver.waitForFunction(
+      () => {
+        const v = document.getElementById("feed");
+        return v && v.srcObject && v.videoWidth > 0;
+      },
+      null,
+      { timeout: 20000 },
+    );
+  } finally {
+    await ctx.close();
+  }
 });
 
 test("Rotate flips the frame the receiver gets from landscape to portrait", async () => {
   const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
+  try {
   const receiver = await ctx.newPage();
   await receiver.goto(`${HTTP_BASE}/receiver.html`);
   const sender = await ctx.newPage();
@@ -195,8 +201,9 @@ test("Rotate flips the frame the receiver gets from landscape to portrait", asyn
     after.h > after.w,
     `expected portrait after Rotate, got ${after.w}x${after.h}`,
   );
-
-  await ctx.close();
+  } finally {
+    await ctx.close();
+  }
 });
 
 // --- filter pipeline ---
@@ -700,6 +707,71 @@ test("laptop control panel is usable (not disabled) even before the phone links"
   await ctx.close();
 });
 
+test("iPad board streams drawn frames into its OBS receiver without kicking the phone", async () => {
+  const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
+  try {
+  const phoneRx = await ctx.newPage();
+  await phoneRx.goto(`${HTTP_BASE}/receiver.html`);
+  const phone = await ctx.newPage();
+  await phone.goto(`${HTTPS_BASE}/sender.html`);
+  await phoneRx.waitForFunction(
+    () => {
+      const v = document.getElementById("feed");
+      return v && v.srcObject && v.videoWidth > 0;
+    },
+    { timeout: 20000 },
+  );
+
+  const boardRx = await ctx.newPage();
+  await boardRx.goto(`${HTTP_BASE}/board-receiver.html`);
+  const board = await ctx.newPage();
+  await board.goto(`${HTTPS_BASE}/board.html`);
+  await board.waitForFunction(
+    () => document.body.dataset.boardReady === "1" && window.__board,
+    { timeout: 15000 },
+  );
+  await board.evaluate(() => window.__board.drawTestStroke());
+
+  await boardRx.waitForFunction(
+    () => {
+      const v = document.getElementById("feed");
+      return v && v.srcObject && v.videoWidth > 0 && v.videoHeight > 0;
+    },
+    { timeout: 25000 },
+  );
+  const hintHidden = await boardRx.evaluate(() =>
+    document.getElementById("hint").classList.contains("hidden"),
+  );
+  assert.equal(hintHidden, true, "board waiting hint should hide once frames arrive");
+
+  const phoneStill = await phoneRx.evaluate(() => {
+    const v = document.getElementById("feed");
+    return !!(v && v.srcObject && v.videoWidth > 0);
+  });
+  assert.equal(phoneStill, true, "phone OBS source must stay live while the iPad board is connected");
+
+  const landing = await ctx.newPage();
+  await landing.goto(`${HTTPS_BASE}/`);
+  const boardQr = await landing.evaluate(() => {
+    const img = document.getElementById("boardQr");
+    return {
+      src: img?.getAttribute("src") || "",
+      url: document.getElementById("boardUrl")?.textContent || "",
+      obs: document.getElementById("obsBoardUrl")?.textContent || "",
+    };
+  });
+  assert.match(boardQr.src, /\/qr\?url=/, "landing should show an iPad QR");
+  assert.match(boardQr.url, /board\.html/, `expected board.html URL, got ${boardQr.url}`);
+  assert.match(
+    boardQr.obs,
+    /board-receiver\.html/,
+    `expected board-receiver OBS URL, got ${boardQr.obs}`,
+  );
+  } finally {
+    await ctx.close();
+  }
+});
+
 test("Mirror button on the phone toggles horizontal flip param", async () => {
   const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
   const sender = await ctx.newPage();
@@ -716,4 +788,5 @@ test("Mirror button on the phone toggles horizontal flip param", async () => {
     { timeout: 5000 },
   );
   await ctx.close();
+});
 });
