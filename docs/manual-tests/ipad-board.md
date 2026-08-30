@@ -47,7 +47,12 @@ Safari on iPad cannot share another app (no `getDisplayMedia`). The board page i
    - Expected: only the ink sits over the camera.
    - Pass / Fail:
 
-7. **Desktop window share (optional)**
+7. **Tabs and saved drawings**
+   - Action: draw something, tap **+**, draw something else, tap the first tab. Reload Safari. Open **Drawings**, rename, delete one.
+   - Expected: both drawings survive the switch; the first is still there after reload; the list shows every save.
+   - Pass / Fail:
+
+8. **Desktop window share (optional)**
    - Action: open the board page in laptop Chrome, click Share window, pick an Excalidraw tab.
    - Expected: that window appears in the same OBS board source. iPad Safari will not show this button.
    - Pass / Fail:
