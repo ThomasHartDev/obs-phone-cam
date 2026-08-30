@@ -11,6 +11,7 @@ import {
   redo,
   clearBoard,
   setPaper,
+  checkpoint,
   renderBoard,
 } from "/board-engine.js";
 
@@ -27,6 +28,8 @@ const view = { panX: 0, panY: 0, scale: 1, w: 1, h: 1 };
 let tool = "pen";
 let color = COLORS[0];
 let width = 4;
+let eraserDiameter = 48;
+let eraseMode = "pixel";
 let live = false;
 let peerPresent = false;
 let pc = null;
@@ -158,6 +161,7 @@ function bindToolbar() {
       tool = name;
       for (const el of document.querySelectorAll("[data-tool]"))
         el.setAttribute("aria-pressed", String(el.dataset.tool === tool));
+      syncEraseUi();
     };
   }
   const swatches = document.getElementById("swatches");
@@ -176,9 +180,21 @@ function bindToolbar() {
     swatches.appendChild(b);
   }
   const widthEl = document.getElementById("width");
-  widthEl.value = String(width);
   widthEl.oninput = () => {
-    width = Number(widthEl.value);
+    const n = Number(widthEl.value);
+    if (tool === "eraser") {
+      eraserDiameter = n;
+      const cur = document.getElementById("eraseCursor");
+      if (cur && !cur.hidden) {
+        cur.style.width = n + "px";
+        cur.style.height = n + "px";
+      }
+    } else width = n;
+  };
+  const modeEl = document.getElementById("eraseMode");
+  modeEl.value = eraseMode;
+  modeEl.onchange = () => {
+    eraseMode = modeEl.value === "element" ? "element" : "pixel";
   };
   document.getElementById("undoBtn").onclick = () => {
     undo(scene);
@@ -200,6 +216,47 @@ function bindToolbar() {
     shareBtn.hidden = false;
     shareBtn.onclick = toggleShare;
   }
+  syncEraseUi();
+}
+
+function syncEraseUi() {
+  const erasing = tool === "eraser";
+  document.getElementById("eraseMode").hidden = !erasing;
+  const widthEl = document.getElementById("width");
+  const label = document.getElementById("widthLabel");
+  if (erasing) {
+    widthEl.min = "12";
+    widthEl.max = "180";
+    widthEl.value = String(eraserDiameter);
+    if (label) label.firstChild.textContent = "Eraser ";
+    canvas.style.cursor = "none";
+  } else {
+    widthEl.min = "2";
+    widthEl.max = "18";
+    widthEl.value = String(width);
+    if (label) label.firstChild.textContent = "Size";
+    canvas.style.cursor = "crosshair";
+    hideEraseCursor();
+  }
+}
+
+function eraserRadiusWorld() {
+  return eraserDiameter / 2 / view.scale;
+}
+
+function showEraseCursor(clientX, clientY) {
+  const el = document.getElementById("eraseCursor");
+  if (!el || tool !== "eraser") return;
+  el.hidden = false;
+  el.style.width = eraserDiameter + "px";
+  el.style.height = eraserDiameter + "px";
+  el.style.left = clientX + "px";
+  el.style.top = clientY + "px";
+}
+
+function hideEraseCursor() {
+  const el = document.getElementById("eraseCursor");
+  if (el) el.hidden = true;
 }
 
 async function toggleShare() {
@@ -262,8 +319,11 @@ function onDown(e) {
   }
   const world = screenToWorld(pos.x, pos.y);
   if (tool === "eraser") {
-    eraseAt(scene, world.x, world.y, Math.max(16, width * 3) / view.scale);
-    current = { kind: "erase" };
+    showEraseCursor(e.clientX, e.clientY);
+    checkpoint(scene);
+    current = { kind: "erase", dirty: false };
+    if (eraseAt(scene, world.x, world.y, eraserRadiusWorld(), eraseMode))
+      current.dirty = true;
     paint();
     return;
   }
@@ -302,7 +362,9 @@ function onMove(e) {
   if (!current) return;
   const world = screenToWorld(pos.x, pos.y);
   if (current.kind === "erase") {
-    eraseAt(scene, world.x, world.y, Math.max(16, width * 3) / view.scale);
+    showEraseCursor(e.clientX, e.clientY);
+    if (eraseAt(scene, world.x, world.y, eraserRadiusWorld(), eraseMode))
+      current.dirty = true;
     paint();
     return;
   }
@@ -318,13 +380,23 @@ function onMove(e) {
 function onUp(e) {
   pointers.delete(e.pointerId);
   if (pointers.size < 2) pinch = null;
+  if (current && current.kind === "erase" && !current.dirty) {
+    // no pixels/strokes removed: drop the empty checkpoint
+    if (scene.history.length) scene.history.pop();
+  }
   current = null;
 }
 
 canvas.addEventListener("pointerdown", onDown);
-canvas.addEventListener("pointermove", onMove);
+canvas.addEventListener("pointermove", (e) => {
+  if (tool === "eraser") showEraseCursor(e.clientX, e.clientY);
+  onMove(e);
+});
 canvas.addEventListener("pointerup", onUp);
 canvas.addEventListener("pointercancel", onUp);
+canvas.addEventListener("pointerleave", () => {
+  if (!pointers.size) hideEraseCursor();
+});
 canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 
 window.addEventListener("keydown", (e) => {
@@ -364,11 +436,24 @@ Object.defineProperty(window, "__board", {
     tool,
     live,
     peerPresent,
+    eraseMode,
+    eraserDiameter,
     drawTestStroke() {
       const ink = beginInk(scene, "pen", "#e24a3b", 8, 80, 80, 1);
       for (let i = 1; i <= 40; i++) addPoint(ink, 80 + i * 8, 80 + Math.sin(i / 4) * 24, 1);
       paint();
       return scene.items.length;
+    },
+    undoLast() {
+      const ok = undo(scene);
+      paint();
+      return ok;
+    },
+    punch(x, y, r, mode) {
+      checkpoint(scene);
+      const ok = eraseAt(scene, x, y, r, mode || "element");
+      paint();
+      return { ok, n: scene.items.length };
     },
   }),
 });

@@ -32,6 +32,11 @@ Safari on iPad cannot share another app (no `getDisplayMedia`). The board page i
    - Expected: strokes show on the iPad and in OBS with no multi-second lag. Undo removes the last mark.
    - Pass / Fail:
 
+4b. **Eraser size, mode, undo**
+   - Action: tap Erase. Drag Size: a circle follows the pencil. Pixel-erase through a line (it should split, not vanish). Undo. Switch to Stroke, tap a box: the whole box goes. Undo again.
+   - Expected: circle tracks Size; Undo brings the marks back both times.
+   - Pass / Fail:
+
 5. **Phone camera stays live**
    - Action: with the board live, look at the existing phone Browser Source.
    - Expected: the iPhone feed does not freeze or drop.

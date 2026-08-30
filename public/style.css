@@ -173,6 +173,16 @@ html:has(body.board) {
   touch-action: none;
   cursor: crosshair;
 }
+#eraseCursor {
+  position: fixed;
+  z-index: 3;
+  pointer-events: none;
+  border: 2px solid #1a1d23;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px #fff;
+  transform: translate(-50%, -50%);
+  box-sizing: border-box;
+}
 .board-hud {
   position: fixed;
   left: 0;

@@ -7,16 +7,29 @@ export const PAPERS = {
   dark: { fill: "#161a20", grid: true, chroma: false },
 };
 
+const HISTORY_CAP = 100;
+
 export function createBoard() {
   return {
     items: [],
-    undone: [],
+    history: [],
+    future: [],
     paper: "white",
   };
 }
 
+export function cloneItems(items) {
+  return JSON.parse(JSON.stringify(items));
+}
+
+export function checkpoint(board) {
+  board.history.push(cloneItems(board.items));
+  board.future.length = 0;
+  if (board.history.length > HISTORY_CAP) board.history.shift();
+}
+
 export function beginInk(board, tool, color, width, x, y, p) {
-  board.undone.length = 0;
+  checkpoint(board);
   const item = {
     kind: "ink",
     tool,
@@ -38,7 +51,7 @@ export function addPoint(item, x, y, p) {
 }
 
 export function beginShape(board, tool, color, width, x, y) {
-  board.undone.length = 0;
+  checkpoint(board);
   const item = {
     kind: "shape",
     tool,
@@ -58,13 +71,18 @@ export function setShapeEnd(item, x, y) {
 export function addText(board, color, size, x, y, text) {
   const t = String(text || "").trim();
   if (!t) return null;
-  board.undone.length = 0;
+  checkpoint(board);
   const item = { kind: "text", color, size, x, y, text: t };
   board.items.push(item);
   return item;
 }
 
-export function eraseAt(board, x, y, radius) {
+export function eraseAt(board, x, y, radius, mode = "element") {
+  if (mode === "pixel") return erasePixels(board, x, y, radius);
+  return eraseElements(board, x, y, radius);
+}
+
+function eraseElements(board, x, y, radius) {
   const keep = [];
   let hit = false;
   for (const item of board.items) {
@@ -72,26 +90,81 @@ export function eraseAt(board, x, y, radius) {
     else keep.push(item);
   }
   if (!hit) return false;
-  board.undone.length = 0;
   board.items = keep;
   return true;
 }
 
+function erasePixels(board, x, y, radius) {
+  const next = [];
+  let hit = false;
+  for (const item of board.items) {
+    if (item.kind !== "ink") {
+      if (itemHits(item, x, y, radius)) hit = true;
+      else next.push(item);
+      continue;
+    }
+    const parts = splitInkOutside(item, x, y, radius);
+    if (parts == null) {
+      next.push(item);
+      continue;
+    }
+    hit = true;
+    next.push(...parts);
+  }
+  if (!hit) return false;
+  board.items = next;
+  return true;
+}
+
+function splitInkOutside(item, x, y, radius) {
+  const r2 = radius * radius;
+  const pts = item.points;
+  let anyHit = false;
+  const keep = pts.map((pt) => {
+    const ok = dist2(pt.x, pt.y, x, y) > r2;
+    if (!ok) anyHit = true;
+    return ok;
+  });
+  if (!anyHit) return null;
+  const parts = [];
+  let run = [];
+  const flush = () => {
+    if (run.length) {
+      parts.push({
+        kind: "ink",
+        tool: item.tool,
+        color: item.color,
+        width: item.width,
+        points: run,
+      });
+    }
+    run = [];
+  };
+  for (let i = 0; i < pts.length; i++) {
+    if (keep[i]) run.push(pts[i]);
+    else flush();
+  }
+  flush();
+  return parts;
+}
+
 export function undo(board) {
-  if (!board.items.length) return false;
-  board.undone.push(board.items.pop());
+  if (!board.history.length) return false;
+  board.future.push(cloneItems(board.items));
+  board.items = board.history.pop();
   return true;
 }
 
 export function redo(board) {
-  if (!board.undone.length) return false;
-  board.items.push(board.undone.pop());
+  if (!board.future.length) return false;
+  board.history.push(cloneItems(board.items));
+  board.items = board.future.pop();
   return true;
 }
 
 export function clearBoard(board) {
   if (!board.items.length) return false;
-  board.undone.length = 0;
+  checkpoint(board);
   board.items = [];
   return true;
 }
@@ -242,7 +315,12 @@ function itemHits(item, x, y, radius) {
   if (item.kind === "text") {
     const w = item.text.length * item.size * 0.55;
     const h = item.size * 1.2;
-    return x >= item.x - radius && x <= item.x + w + radius && y >= item.y - radius && y <= item.y + h + radius;
+    return (
+      x >= item.x - radius &&
+      x <= item.x + w + radius &&
+      y >= item.y - radius &&
+      y <= item.y + h + radius
+    );
   }
   return false;
 }

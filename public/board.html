@@ -13,6 +13,7 @@
   </head>
   <body class="board">
     <canvas id="board"></canvas>
+    <div id="eraseCursor" hidden></div>
     <div class="board-hud">
       <div id="status" class="status">Starting board…</div>
       <div class="board-tools">
@@ -25,9 +26,13 @@
         <button type="button" data-tool="arrow" aria-pressed="false">Arrow</button>
         <button type="button" data-tool="text" aria-pressed="false">Text</button>
         <span id="swatches" class="swatches"></span>
-        <label class="width-label"
+        <label class="width-label" id="widthLabel"
           >Size<input id="width" type="range" min="2" max="18" step="1" value="4"
         /></label>
+        <select id="eraseMode" aria-label="Eraser mode" hidden>
+          <option value="pixel">Pixel</option>
+          <option value="element">Stroke</option>
+        </select>
         <select id="paper" aria-label="Paper">
           <option value="white">White</option>
           <option value="grid">Grid</option>
