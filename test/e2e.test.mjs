@@ -772,6 +772,41 @@ test("iPad board streams drawn frames into its OBS receiver without kicking the 
   }
 });
 
+test("board undo restores a stroke after erase", async () => {
+  const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
+  try {
+    const board = await ctx.newPage();
+    await board.goto(`${HTTPS_BASE}/board.html`);
+    await board.waitForFunction(
+      () => document.body.dataset.boardReady === "1" && window.__board,
+      null,
+      { timeout: 15000 },
+    );
+    const drawn = await board.evaluate(() => window.__board.drawTestStroke());
+    assert.ok(drawn >= 1, "expected a test stroke");
+    const erased = await board.evaluate(() => window.__board.punch(80, 80, 40, "element"));
+    assert.equal(erased.ok, true);
+    assert.equal(erased.n, 0);
+    const restored = await board.evaluate(() => {
+      const ok = window.__board.undoLast();
+      return { ok, n: window.__board.scene.items.length };
+    });
+    assert.equal(restored.ok, true);
+    assert.equal(restored.n, 1);
+    await board.click('[data-tool="eraser"]');
+    const ui = await board.evaluate(() => ({
+      modeHidden: document.getElementById("eraseMode").hidden,
+      cursor: getComputedStyle(document.getElementById("board")).cursor,
+      min: document.getElementById("width").min,
+    }));
+    assert.equal(ui.modeHidden, false, "pixel/stroke toggle should show with eraser");
+    assert.equal(ui.cursor, "none");
+    assert.equal(ui.min, "12");
+  } finally {
+    await ctx.close();
+  }
+});
+
 test("Mirror button on the phone toggles horizontal flip param", async () => {
   const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
   const sender = await ctx.newPage();
