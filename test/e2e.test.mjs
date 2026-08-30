@@ -6,6 +6,8 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import os from "node:os";
+import fs from "node:fs";
 import { chromium } from "playwright";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -13,15 +15,22 @@ const ROOT = path.join(__dirname, "..");
 const PORT = 8788;
 const HTTPS_BASE = `https://localhost:${PORT}`;
 const HTTP_BASE = `http://localhost:${PORT + 1}`;
+const DRAW_DIR = path.join(os.tmpdir(), "obscam-drawings-e2e");
 
 let server;
 let browser;
 
 describe("obs-phone-cam e2e", { concurrency: 1 }, () => {
 before(async () => {
+  fs.mkdirSync(DRAW_DIR, { recursive: true });
   server = spawn("node", ["server.mjs"], {
     cwd: ROOT,
-    env: { ...process.env, PORT: String(PORT), OBS_NO_OPEN: "1" },
+    env: {
+      ...process.env,
+      PORT: String(PORT),
+      OBS_NO_OPEN: "1",
+      DRAWINGS_DIR: DRAW_DIR,
+    },
   });
   await new Promise((resolve, reject) => {
     const timer = setTimeout(
@@ -802,6 +811,46 @@ test("board undo restores a stroke after erase", async () => {
     assert.equal(ui.modeHidden, false, "pixel/stroke toggle should show with eraser");
     assert.equal(ui.cursor, "none");
     assert.equal(ui.min, "12");
+  } finally {
+    await ctx.close();
+  }
+});
+
+test("board tabs save a drawing and restore it after reload", async () => {
+  const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
+  try {
+    const board = await ctx.newPage();
+    await board.goto(`${HTTPS_BASE}/board.html`);
+    await board.waitForFunction(
+      () => document.body.dataset.boardReady === "1" && window.__board,
+      null,
+      { timeout: 15000 },
+    );
+    await board.evaluate(() => window.__board.drawTestStroke());
+    await board.evaluate(() => window.__board.flushSave());
+    const firstId = await board.evaluate(() => window.__board.activeId);
+    assert.ok(firstId, "expected an active drawing id");
+    await board.evaluate(() => window.__board.newTab());
+    await board.waitForFunction(
+      (id) => window.__board.activeId && window.__board.activeId !== id,
+      firstId,
+      { timeout: 8000 },
+    );
+    const open = await board.evaluate(() => window.__board.openIds.length);
+    assert.ok(open >= 2, `expected two tabs, got ${open}`);
+    await board.reload();
+    await board.waitForFunction(
+      () => document.body.dataset.boardReady === "1" && window.__board?.activeId,
+      null,
+      { timeout: 15000 },
+    );
+    await board.evaluate((id) => window.__board.switchTo(id, { skipSave: true }), firstId);
+    await board.waitForFunction(
+      (id) =>
+        window.__board.activeId === id && window.__board.scene.items.length >= 1,
+      firstId,
+      { timeout: 8000 },
+    );
   } finally {
     await ctx.close();
   }

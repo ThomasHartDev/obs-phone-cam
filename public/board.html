@@ -16,6 +16,11 @@
     <div id="eraseCursor" hidden></div>
     <div class="board-hud">
       <div id="status" class="status">Starting board…</div>
+      <div class="board-session">
+        <button type="button" id="libBtn">Drawings</button>
+        <div id="tabs" class="board-tabs" role="tablist"></div>
+        <button type="button" id="tabNew" title="New drawing">+</button>
+      </div>
       <div class="board-tools">
         <button type="button" data-tool="pen" aria-pressed="true">Pen</button>
         <button type="button" data-tool="highlighter" aria-pressed="false">Hi</button>
@@ -46,6 +51,14 @@
           Share window
         </button>
       </div>
+    </div>
+    <div id="library" class="library" hidden>
+      <div class="library-head">
+        <strong>Drawings</strong>
+        <button type="button" id="libNew">New</button>
+        <button type="button" id="libClose">Close</button>
+      </div>
+      <ul id="libList" class="library-list"></ul>
     </div>
     <script type="module" src="/board.js"></script>
   </body>

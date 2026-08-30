@@ -13,10 +13,14 @@ import { spawn } from "node:child_process";
 import { WebSocketServer } from "ws";
 import selfsigned from "selfsigned";
 import QRCode from "qrcode";
+import { createDrawingsStore, isDocId } from "./drawings-store.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, "public");
 const CERT_DIR = path.join(__dirname, "certs");
+const DRAWINGS_DIR =
+  process.env.DRAWINGS_DIR || path.join(__dirname, "data", "drawings");
+const drawings = createDrawingsStore(DRAWINGS_DIR);
 const PORT = Number(process.env.PORT || 8443);
 
 // getUserMedia on iOS Safari requires a secure context. On a LAN IP that means
@@ -101,7 +105,7 @@ const MIME = {
 // Laptop UIs fetch QR / lan.json / control cross-origin.
 const CORS = {
   "access-control-allow-origin": "*",
-  "access-control-allow-methods": "GET, POST, OPTIONS",
+  "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS",
   "access-control-allow-headers": "content-type",
 };
 
@@ -149,6 +153,64 @@ function readBody(req, limit = 64_000) {
     req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
     req.on("error", reject);
   });
+}
+
+function json(res, status, obj) {
+  res
+    .writeHead(status, {
+      "content-type": "application/json",
+      "cache-control": "no-store",
+      ...CORS,
+    })
+    .end(JSON.stringify(obj));
+}
+
+async function handleDrawings(url, req, res) {
+  const pathname = url.pathname;
+  if (pathname === "/drawings" && req.method === "GET") {
+    json(res, 200, { drawings: await drawings.list() });
+    return true;
+  }
+  const m = pathname.match(/^\/drawings\/([^/]+)$/);
+  if (!m) return false;
+  const id = decodeURIComponent(m[1]);
+  if (!isDocId(id)) {
+    json(res, 400, { error: "bad id" });
+    return true;
+  }
+  if (req.method === "GET") {
+    const doc = await drawings.get(id);
+    if (!doc) json(res, 404, { error: "not found" });
+    else json(res, 200, { drawing: doc });
+    return true;
+  }
+  if (req.method === "PUT") {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req, 2_000_000));
+    } catch {
+      json(res, 400, { error: "invalid json" });
+      return true;
+    }
+    if (!body || typeof body !== "object") {
+      json(res, 400, { error: "object required" });
+      return true;
+    }
+    body.id = id;
+    try {
+      const doc = await drawings.put(body);
+      json(res, 200, { drawing: doc });
+    } catch (e) {
+      json(res, 400, { error: e instanceof Error ? e.message : "save failed" });
+    }
+    return true;
+  }
+  if (req.method === "DELETE") {
+    const ok = await drawings.remove(id);
+    json(res, ok ? 200 : 404, { ok });
+    return true;
+  }
+  return false;
 }
 
 async function handleRequest(req, res) {
@@ -218,6 +280,7 @@ async function handleRequest(req, res) {
     );
     return;
   }
+  if (await handleDrawings(url, req, res)) return;
   if (url.pathname === "/state" && req.method === "GET") {
     res
       .writeHead(200, {

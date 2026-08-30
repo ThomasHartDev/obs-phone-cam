@@ -14,6 +14,12 @@ import {
   checkpoint,
   renderBoard,
 } from "/board-engine.js";
+import {
+  createDoc,
+  applyDocToScene,
+  sceneToDoc,
+  metaOf,
+} from "/board-docs.js";
 
 const canvas = document.getElementById("board");
 const ctx = canvas.getContext("2d", { alpha: false });
@@ -38,6 +44,12 @@ let sharing = false;
 let current = null;
 let pointers = new Map();
 let pinch = null;
+const OPEN_KEY = "obscam.board.openTabs";
+let catalog = [];
+let openIds = [];
+let active = null;
+let dirty = false;
+let saveTimer = 0;
 
 const setStatus = (t, cls = "") => {
   statusEl.textContent = t;
@@ -198,20 +210,30 @@ function bindToolbar() {
   };
   document.getElementById("undoBtn").onclick = () => {
     undo(scene);
-    paint();
+    afterEdit();
   };
   document.getElementById("redoBtn").onclick = () => {
     redo(scene);
-    paint();
+    afterEdit();
   };
   document.getElementById("clearBtn").onclick = () => {
     clearBoard(scene);
-    paint();
+    afterEdit();
   };
   document.getElementById("paper").onchange = (e) => {
     setPaper(scene, e.target.value);
-    paint();
+    afterEdit();
   };
+  document.getElementById("libBtn").onclick = () => {
+    const el = document.getElementById("library");
+    el.hidden = !el.hidden;
+    if (!el.hidden) renderLibrary();
+  };
+  document.getElementById("libClose").onclick = () => {
+    document.getElementById("library").hidden = true;
+  };
+  document.getElementById("libNew").onclick = () => newTab();
+  document.getElementById("tabNew").onclick = () => newTab();
   if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
     shareBtn.hidden = false;
     shareBtn.onclick = toggleShare;
@@ -257,6 +279,228 @@ function showEraseCursor(clientX, clientY) {
 function hideEraseCursor() {
   const el = document.getElementById("eraseCursor");
   if (el) el.hidden = true;
+}
+
+function afterEdit() {
+  paint();
+  scheduleSave();
+}
+
+function persistOpen() {
+  try {
+    localStorage.setItem(OPEN_KEY, JSON.stringify(openIds));
+  } catch {}
+}
+
+function scheduleSave() {
+  if (!active) return;
+  dirty = true;
+  renderTabs();
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    flushSave().catch(() => {});
+  }, 600);
+}
+
+async function flushSave() {
+  if (!active || !dirty) return active;
+  const doc = sceneToDoc(active, scene);
+  const r = await fetch("/drawings/" + encodeURIComponent(doc.id), {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(doc),
+  });
+  if (!r.ok) throw new Error("save failed");
+  const { drawing } = await r.json();
+  active = drawing;
+  dirty = false;
+  upsertCatalog(metaOf(drawing));
+  renderTabs();
+  renderLibrary();
+  return drawing;
+}
+
+function upsertCatalog(meta) {
+  const i = catalog.findIndex((d) => d.id === meta.id);
+  if (i >= 0) catalog[i] = meta;
+  else catalog.unshift(meta);
+  catalog.sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+async function switchTo(id, { skipSave } = {}) {
+  if (!id) return;
+  if (!skipSave && active && active.id !== id) await flushSave().catch(() => {});
+  const r = await fetch("/drawings/" + encodeURIComponent(id));
+  if (!r.ok) return;
+  const { drawing } = await r.json();
+  active = drawing;
+  dirty = false;
+  applyDocToScene(drawing, scene);
+  const paperEl = document.getElementById("paper");
+  if (paperEl) paperEl.value = scene.paper;
+  if (!openIds.includes(id)) openIds.push(id);
+  persistOpen();
+  paint();
+  renderTabs();
+}
+
+async function newTab() {
+  await flushSave().catch(() => {});
+  const doc = await putDrawing(
+    createDoc({ title: "Drawing " + (catalog.length + 1) }),
+  );
+  upsertCatalog(metaOf(doc));
+  openIds.push(doc.id);
+  persistOpen();
+  await switchTo(doc.id, { skipSave: true });
+  document.getElementById("library").hidden = true;
+}
+
+async function putDrawing(doc) {
+  const r = await fetch("/drawings/" + encodeURIComponent(doc.id), {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(doc),
+  });
+  if (!r.ok) throw new Error("save failed");
+  const { drawing } = await r.json();
+  return drawing;
+}
+
+async function closeTab(id) {
+  if (active && active.id === id) await flushSave().catch(() => {});
+  openIds = openIds.filter((x) => x !== id);
+  if (!openIds.length) {
+    await newTab();
+    return;
+  }
+  persistOpen();
+  if (active && active.id === id) await switchTo(openIds[0], { skipSave: true });
+  else renderTabs();
+}
+
+function renderTabs() {
+  const root = document.getElementById("tabs");
+  if (!root) return;
+  root.replaceChildren();
+  for (const id of openIds) {
+    const meta = catalog.find((d) => d.id === id);
+    const title = meta?.title || active?.title || "Untitled";
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "tab" + (dirty && active && active.id === id ? " dirty" : "");
+    btn.setAttribute("role", "tab");
+    btn.setAttribute("aria-selected", String(!!(active && active.id === id)));
+    btn.dataset.id = id;
+    const name = document.createElement("span");
+    name.className = "tab-title";
+    name.textContent = title;
+    const x = document.createElement("span");
+    x.className = "tab-x";
+    x.textContent = "×";
+    x.title = "Close tab";
+    x.onclick = (e) => {
+      e.stopPropagation();
+      closeTab(id);
+    };
+    btn.onclick = () => {
+      if (active && active.id === id) return;
+      switchTo(id);
+    };
+    btn.append(name, x);
+    root.appendChild(btn);
+  }
+}
+
+function renderLibrary() {
+  const ul = document.getElementById("libList");
+  if (!ul) return;
+  ul.replaceChildren();
+  for (const meta of catalog) {
+    const li = document.createElement("li");
+    const open = document.createElement("button");
+    open.type = "button";
+    open.className = "lib-open";
+    open.textContent = meta.title;
+    open.onclick = () => {
+      switchTo(meta.id);
+      document.getElementById("library").hidden = true;
+    };
+    const date = document.createElement("span");
+    date.className = "lib-date";
+    date.textContent = new Date(meta.updatedAt).toLocaleString();
+    const rename = document.createElement("button");
+    rename.type = "button";
+    rename.className = "lib-rename";
+    rename.textContent = "Rename";
+    rename.onclick = () => renameDoc(meta.id);
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "lib-del";
+    del.textContent = "Delete";
+    del.onclick = () => deleteDoc(meta.id);
+    li.append(open, date, rename, del);
+    ul.appendChild(li);
+  }
+}
+
+async function renameDoc(id) {
+  const meta = catalog.find((d) => d.id === id);
+  const next = window.prompt("Rename drawing", meta?.title || "Untitled");
+  if (next == null) return;
+  const title = next.trim();
+  if (!title) return;
+  if (active && active.id === id) {
+    active.title = title;
+    dirty = true;
+    await flushSave();
+  } else {
+    const r = await fetch("/drawings/" + encodeURIComponent(id));
+    if (!r.ok) return;
+    const { drawing } = await r.json();
+    drawing.title = title;
+    const saved = await putDrawing(drawing);
+    upsertCatalog(metaOf(saved));
+  }
+  renderTabs();
+  renderLibrary();
+}
+
+async function deleteDoc(id) {
+  if (!window.confirm("Delete this drawing?")) return;
+  await fetch("/drawings/" + encodeURIComponent(id), { method: "DELETE" });
+  catalog = catalog.filter((d) => d.id !== id);
+  if (openIds.includes(id)) await closeTab(id);
+  renderLibrary();
+  renderTabs();
+}
+
+async function bootDocs() {
+  try {
+    const r = await fetch("/drawings");
+    const j = await r.json();
+    catalog = Array.isArray(j.drawings) ? j.drawings : [];
+  } catch {
+    catalog = [];
+  }
+  let open = [];
+  try {
+    open = JSON.parse(localStorage.getItem(OPEN_KEY) || "[]");
+  } catch {
+    open = [];
+  }
+  open = open.filter((id) => catalog.some((d) => d.id === id));
+  if (!open.length) {
+    if (catalog.length) open = [catalog[0].id];
+    else {
+      const doc = await putDrawing(createDoc({ title: "Drawing 1" }));
+      upsertCatalog(metaOf(doc));
+      open = [doc.id];
+    }
+  }
+  openIds = open;
+  persistOpen();
+  await switchTo(openIds[0], { skipSave: true });
 }
 
 async function toggleShare() {
@@ -329,8 +573,10 @@ function onDown(e) {
   }
   if (tool === "text") {
     const text = window.prompt("Text");
-    if (text) addText(scene, color, Math.max(18, width * 6), world.x, world.y, text);
-    paint();
+    if (text) {
+      addText(scene, color, Math.max(18, width * 6), world.x, world.y, text);
+      afterEdit();
+    } else paint();
     return;
   }
   if (tool === "pen" || tool === "highlighter") {
@@ -381,8 +627,9 @@ function onUp(e) {
   pointers.delete(e.pointerId);
   if (pointers.size < 2) pinch = null;
   if (current && current.kind === "erase" && !current.dirty) {
-    // no pixels/strokes removed: drop the empty checkpoint
     if (scene.history.length) scene.history.pop();
+  } else if (current) {
+    afterEdit();
   }
   current = null;
 }
@@ -405,11 +652,11 @@ window.addEventListener("keydown", (e) => {
     e.preventDefault();
     if (e.shiftKey) redo(scene);
     else undo(scene);
-    paint();
+    afterEdit();
   } else if ((e.metaKey || e.ctrlKey) && key === "y") {
     e.preventDefault();
     redo(scene);
-    paint();
+    afterEdit();
   }
 });
 
@@ -428,7 +675,11 @@ paint();
 })();
 setStatus("Waiting for OBS…", "warn");
 if (peerPresent) offer();
-document.body.dataset.boardReady = "1";
+bootDocs()
+  .catch(() => {})
+  .finally(() => {
+    document.body.dataset.boardReady = "1";
+  });
 
 Object.defineProperty(window, "__board", {
   get: () => ({
@@ -438,10 +689,22 @@ Object.defineProperty(window, "__board", {
     peerPresent,
     eraseMode,
     eraserDiameter,
+    get activeId() {
+      return active && active.id;
+    },
+    get catalog() {
+      return catalog.slice();
+    },
+    get openIds() {
+      return openIds.slice();
+    },
+    flushSave,
+    newTab,
+    switchTo,
     drawTestStroke() {
       const ink = beginInk(scene, "pen", "#e24a3b", 8, 80, 80, 1);
       for (let i = 1; i <= 40; i++) addPoint(ink, 80 + i * 8, 80 + Math.sin(i / 4) * 24, 1);
-      paint();
+      afterEdit();
       return scene.items.length;
     },
     undoLast() {
@@ -452,7 +715,7 @@ Object.defineProperty(window, "__board", {
     punch(x, y, r, mode) {
       checkpoint(scene);
       const ok = eraseAt(scene, x, y, r, mode || "element");
-      paint();
+      afterEdit();
       return { ok, n: scene.items.length };
     },
   }),

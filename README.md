@@ -41,6 +41,8 @@ Then:
 
 Safari on iPad cannot share another app's screen, so the board page itself is the drawing surface. Pick **Green (chroma)** paper if you want to key the drawing over the camera in OBS. On a desktop browser that supports window share, the board page also has **Share window** for a real Excalidraw tab.
 
+Drawings save on the laptop (`data/drawings/`). Use **+** for a new tab, tap a tab to switch (OBS follows the active tab), and **Drawings** to open, rename, or delete saved boards. Closing a tab does not delete the drawing.
+
 ## Laptop remote control
 
 The landing page connects as a **controller** (not the OBS receiver), so you can change every option without touching the phone:
