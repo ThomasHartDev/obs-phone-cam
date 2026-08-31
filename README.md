@@ -44,6 +44,8 @@ Safari on iPad cannot share another app's screen, so the board page itself is th
 
 Drawings save on the laptop (`data/drawings/`). Use **+** for a new tab, tap a tab to switch (OBS follows the active tab), and **Drawings** to open, rename, or delete saved boards. Closing a tab does not delete the drawing.
 
+Freehand boxes, ovals, lines, and arrows snap to clean shapes when you lift. After you pause about two seconds, handwriting becomes real text. If that writing sits right above, below, or inside a shape, it snaps there; farther away it stays where you started.
+
 Apple Pencil: rest your palm, write. If strokes still vanish, iPad Settings → Apple Pencil → Scribble off (Safari can steal handwriting).
 
 ## Laptop remote control

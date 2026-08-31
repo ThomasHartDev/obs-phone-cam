@@ -25,6 +25,14 @@ import {
   shouldStartPinch,
   dropTouches,
 } from "/board-pointers.js";
+import {
+  recognizeStroke,
+  looksLikeHandwriting,
+  clusterInk,
+  snapTextBox,
+  bboxOf,
+  TEXT_IDLE_MS,
+} from "/board-recognize.js";
 import { attachLogPanel, log, getLogs, refreshLogPanel } from "/board-log.js";
 
 const canvas = document.getElementById("board");
@@ -58,6 +66,8 @@ let dirty = false;
 let saveTimer = 0;
 let frameDirty = true;
 let saving = false;
+let textTimer = 0;
+let textGen = 0;
 
 const setStatus = (t, cls = "") => {
   statusEl.textContent = t;
@@ -621,6 +631,8 @@ function eventPos(e) {
 function onDown(e) {
   if (sharing) return;
   e.preventDefault();
+  textGen += 1;
+  clearTimeout(textTimer);
   if (shouldIgnoreTouch(e.pointerType, pointers, current && current.pointerType))
     return;
   if (e.pointerType === "pen") {
@@ -722,12 +734,118 @@ function onUp(e) {
   if (!shouldStartPinch(pointers)) pinch = null;
   const penStillDown = [...pointers.values()].some((p) => p.type === "pen");
   if (penStillDown && current) return;
+  const finished = current;
   if (current && current.kind === "erase" && !current.dirty) {
     if (scene.history.length) scene.history.pop();
   } else if (current) {
     afterEdit();
   }
   current = null;
+  if (finished && finished.kind === "ink" && finished.tool === "pen") {
+    if (!beautifyInk(finished)) armTextRecognize();
+  }
+}
+
+function beautifyInk(item) {
+  const rec = recognizeStroke(item.points);
+  if (!rec) return false;
+  checkpoint(scene);
+  const idx = scene.items.indexOf(item);
+  if (idx < 0) return false;
+  scene.items[idx] = {
+    kind: "shape",
+    tool: rec.tool,
+    color: item.color,
+    width: item.width,
+    a: rec.a,
+    b: rec.b,
+  };
+  afterEdit();
+  return true;
+}
+
+function armTextRecognize() {
+  const gen = textGen;
+  clearTimeout(textTimer);
+  textTimer = setTimeout(() => {
+    if (gen !== textGen) return;
+    runTextRecognize().catch(() => {});
+  }, TEXT_IDLE_MS);
+}
+
+function rasterizeGroup(group) {
+  const pts = group.flatMap((g) => g.points);
+  const b = bboxOf(pts);
+  const pad = 18;
+  const scale = 3;
+  const c = document.createElement("canvas");
+  c.width = Math.max(8, Math.ceil((b.w + pad * 2) * scale));
+  c.height = Math.max(8, Math.ceil((b.h + pad * 2) * scale));
+  const g = c.getContext("2d");
+  g.fillStyle = "#fff";
+  g.fillRect(0, 0, c.width, c.height);
+  g.scale(scale, scale);
+  g.translate(-b.minX + pad, -b.minY + pad);
+  g.lineCap = "round";
+  g.lineJoin = "round";
+  g.strokeStyle = "#111";
+  for (const item of group) {
+    const p = item.points;
+    if (!p.length) continue;
+    g.lineWidth = Math.max(2.2, (item.width || 4) * 1.4);
+    g.beginPath();
+    g.moveTo(p[0].x, p[0].y);
+    for (let i = 1; i < p.length; i++) g.lineTo(p[i].x, p[i].y);
+    g.stroke();
+  }
+  return { png: c.toDataURL("image/png"), box: b };
+}
+
+async function runTextRecognize() {
+  const inks = scene.items.filter((it) => it.kind === "ink" && it.tool === "pen");
+  if (!inks.length) return;
+  const groups = clusterInk(inks);
+  let changed = false;
+  setStatus("Reading handwriting…");
+  for (const group of groups) {
+    const pts = group.flatMap((g) => g.points);
+    if (pts.length < 8) continue;
+    if (recognizeStroke(pts)) continue;
+    if (!group.some((g) => looksLikeHandwriting(g.points)) && pts.length < 18)
+      continue;
+    const { png, box } = rasterizeGroup(group);
+    if (box.w < 14 || box.h < 8) continue;
+    let text = "";
+    try {
+      const r = await fetch("/recognize-ink", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ image: png }),
+      });
+      const j = await r.json();
+      text = String(j.text || "").trim();
+    } catch {
+      text = "";
+    }
+    if (text.length < 1) continue;
+    const fontSize = Math.max(16, Math.min(72, box.h * 0.92));
+    const others = scene.items.filter((it) => !group.includes(it));
+    const snap = snapTextBox(box, others, fontSize);
+    checkpoint(scene);
+    scene.items = scene.items.filter((it) => !group.includes(it));
+    scene.items.push({
+      kind: "text",
+      color: group[0].color || "#1a1d23",
+      size: fontSize,
+      x: snap.x,
+      y: snap.y,
+      text,
+    });
+    changed = true;
+  }
+  if (changed) afterEdit();
+  if (peerPresent && live) setStatus("Live in OBS ●", "live");
+  else setStatus("Waiting for OBS…", "warn");
 }
 
 function onCancel(e) {
