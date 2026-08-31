@@ -22,7 +22,7 @@ iPad   Safari  board.html    ──WebRTC──►  OBS  board-receiver.html  (w
 
 On the laptop that has OBS:
 
-**Windows:** double-click **`Start Phone Cam.bat`**. It installs on first run, starts the server, and opens your browser to the QR page automatically.
+**Windows:** double-click **`Start Phone Cam.bat`**. It installs on first run, starts the server, and opens two browser tabs: scan-with-iPhone and scan-with-iPad.
 
 **Or from a terminal (any OS):**
 
@@ -33,11 +33,11 @@ npm start
 
 Then:
 
-1. Open `https://localhost:8443/` on the laptop — it shows a QR code, the OBS URL, and a **control panel**.
-2. Scan the QR with your iPhone (same Wi-Fi). Tap through the one-time cert warning, allow the camera.
+1. Double-click the app (or `npm start`). Two tabs open: **Scan with your iPhone** and **Scan with your iPad**. Camera controls stay at `https://localhost:8443/`.
+2. Scan the iPhone tab with your iPhone (same Wi-Fi). Tap through the one-time cert warning, allow the camera. Scan the iPad tab with your iPad.
 3. In OBS: **Sources → + → Browser**, URL `http://localhost:8444/receiver.html` (plain http), size = your canvas.
 4. After the phone is live, leave it alone. Use the laptop control panel for everything else.
-5. Optional: scan the **iPad board** QR. Add a second OBS Browser Source at `http://localhost:8444/board-receiver.html`. Draw on the iPad (Apple Pencil works). The camera source is unchanged.
+5. In OBS add a second Browser Source at `http://localhost:8444/board-receiver.html` for the iPad board.
 
 Safari on iPad cannot share another app's screen, so the board page itself is the drawing surface. Pick **Green (chroma)** paper if you want to key the drawing over the camera in OBS. On a desktop browser that supports window share, the board page also has **Share window** for a real Excalidraw tab.
 

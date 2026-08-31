@@ -687,6 +687,32 @@ test("viewer role receives the same live frames without kicking OBS receiver", a
   await ctx.close();
 });
 
+test("pair pages show iPhone and iPad QRs without opening live slots", async () => {
+  const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
+  try {
+    const phone = await ctx.newPage();
+    await phone.goto(`${HTTPS_BASE}/pair.html?for=phone`);
+    await phone.waitForFunction(
+      () => document.body.dataset.for === "phone" && document.getElementById("deviceUrl")?.textContent.includes("sender.html"),
+      null,
+      { timeout: 10000 },
+    );
+    const ipad = await ctx.newPage();
+    await ipad.goto(`${HTTPS_BASE}/pair.html?for=ipad`);
+    await ipad.waitForFunction(
+      () => document.body.dataset.for === "ipad" && document.getElementById("deviceUrl")?.textContent.includes("board.html"),
+      null,
+      { timeout: 10000 },
+    );
+    const phoneQr = await phone.getAttribute("#qr", "src");
+    const ipadQr = await ipad.getAttribute("#qr", "src");
+    assert.match(phoneQr || "", /sender\.html/);
+    assert.match(ipadQr || "", /board\.html/);
+  } finally {
+    await ctx.close();
+  }
+});
+
 test("laptop control panel is usable (not disabled) even before the phone links", async () => {
   const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
   const control = await ctx.newPage();

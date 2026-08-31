@@ -36,6 +36,25 @@ body {
   color: var(--muted);
   margin: 0 0 28px;
 }
+.pair main {
+  text-align: center;
+}
+.pair .eyebrow {
+  color: var(--muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  margin: 0 0 8px;
+}
+.pair img#qr {
+  display: inline-block;
+  border-radius: 12px;
+  background: #fff;
+  padding: 10px;
+}
+.pair a {
+  color: var(--accent);
+}
 .card {
   background: var(--card);
   border: 1px solid var(--border);

@@ -14,7 +14,7 @@ if %errorlevel%==0 if not exist certs\cert.pem (
   mkcert -key-file certs\key.pem -cert-file certs\cert.pem localhost 127.0.0.1 %LANIPS%
 )
 echo.
-echo  Phone Cam is starting. Your browser will open with the QR code.
+echo  Phone Cam is starting. Two tabs open: iPhone QR and iPad QR.
 echo  After the phone is live, use that laptop page to Mirror / Flip V /
 echo  Rotate / filters / res / mic — no need to touch the phone again.
 echo  Leave this window open while you use it. Close it to stop.
