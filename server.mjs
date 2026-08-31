@@ -12,10 +12,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { WebSocketServer } from "ws";
-import selfsigned from "selfsigned";
 import QRCode from "qrcode";
 import { createDrawingsStore, isDocId } from "./drawings-store.mjs";
 import { launchUrls, openLaunchTabs } from "./launch.mjs";
+import { loadTls, buildMobileConfig } from "./tls.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -26,43 +26,6 @@ const drawings = createDrawingsStore(DRAWINGS_DIR);
 const BOARD_LOG = path.join(__dirname, "data", "board.log");
 const boardLogMem = [];
 const PORT = Number(process.env.PORT || 8443);
-
-// getUserMedia on iOS Safari requires a secure context. On a LAN IP that means
-// real HTTPS — localhost's secure-context exemption does NOT extend to 192.168.x.x.
-// Prefer an mkcert-generated cert (no browser warning); fall back to self-signed.
-function loadTls() {
-  const key = path.join(CERT_DIR, "key.pem");
-  const cert = path.join(CERT_DIR, "cert.pem");
-  if (fs.existsSync(key) && fs.existsSync(cert)) {
-    return {
-      key: fs.readFileSync(key),
-      cert: fs.readFileSync(cert),
-      source: "certs/ (mkcert or provided)",
-    };
-  }
-  // Generate a self-signed cert covering localhost + every LAN IP so the phone can trust-on-first-use.
-  const altNames = [
-    { type: 2, value: "localhost" },
-    { type: 7, ip: "127.0.0.1" },
-    ...lanIps().map((ip) => ({ type: 7, ip })),
-  ];
-  const pems = selfsigned.generate(
-    [{ name: "commonName", value: "obs-phone-cam" }],
-    {
-      days: 3650,
-      keySize: 2048,
-      extensions: [{ name: "subjectAltName", altNames }],
-    },
-  );
-  fs.mkdirSync(CERT_DIR, { recursive: true });
-  fs.writeFileSync(key, pems.private);
-  fs.writeFileSync(cert, pems.cert);
-  return {
-    key: pems.private,
-    cert: pems.cert,
-    source: "self-signed (tap through the browser warning once)",
-  };
-}
 
 // Rank an interface by how likely the phone can actually reach it.
 // Real Wi-Fi/Ethernet first; VPN/WSL/Hyper-V/virtual/loopback last —
@@ -267,6 +230,34 @@ async function handleRequest(req, res) {
     }
     return;
   }
+  if (url.pathname === "/ca.pem") {
+    if (!tls.ca) {
+      res.writeHead(404).end("no CA (mkcert not installed)");
+      return;
+    }
+    res
+      .writeHead(200, {
+        "content-type": "application/x-pem-file",
+        "content-disposition": "attachment; filename=\"phone-cam-ca.pem\"",
+        "cache-control": "no-store",
+      })
+      .end(tls.ca);
+    return;
+  }
+  if (url.pathname === "/ca.mobileconfig") {
+    if (!tls.ca) {
+      res.writeHead(404).end("no CA (mkcert not installed)");
+      return;
+    }
+    res
+      .writeHead(200, {
+        "content-type": "application/x-apple-aspen-config",
+        "content-disposition": "attachment; filename=\"phone-cam.mobileconfig\"",
+        "cache-control": "no-store",
+      })
+      .end(buildMobileConfig(tls.ca.toString("utf8")));
+    return;
+  }
   if (url.pathname === "/lan.json") {
     res
       .writeHead(200, {
@@ -338,7 +329,7 @@ async function handleRequest(req, res) {
 }
 
 const HTTP_PORT = PORT + 1;
-const tls = loadTls();
+const tls = loadTls({ certDir: CERT_DIR, ips: lanIps() });
 
 // --- Signaling: WebRTC offer/answer/ICE between sender↔receiver, plus
 // laptop "controller" sockets and multi "viewer" sockets (live preview).

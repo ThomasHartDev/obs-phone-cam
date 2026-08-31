@@ -52,6 +52,22 @@
       </section>
 
       <section class="card">
+        <h2>0. Once per iPhone / iPad</h2>
+        <p class="note" style="margin-top: 0">
+          Safari warns because the laptop uses a local HTTPS cert. Install this
+          once (plain http, no warning), then enable it in Certificate Trust
+          Settings. Camera and board links stay the same after that.
+        </p>
+        <img
+          id="trustQr"
+          alt="QR code to install Phone Cam trust"
+          width="240"
+          height="240"
+        />
+        <p class="mono" id="trustUrl">…</p>
+      </section>
+
+      <section class="card">
         <h2>1. Scan on your iPhone</h2>
         <img
           id="qr"
@@ -151,6 +167,10 @@
       // OBS loads over plain http (its CEF browser won't accept the self-signed https cert)
       const obsUrl = `http://localhost:${httpPort}/receiver.html`;
       const obsBoardUrl = `http://localhost:${httpPort}/board-receiver.html`;
+      const trustUrl = `http://${ip}:${httpPort}/trust.html`;
+      document.getElementById("trustQr").src =
+        "/qr?url=" + encodeURIComponent(trustUrl);
+      document.getElementById("trustUrl").textContent = trustUrl;
       document.getElementById("qr").src =
         "/qr?url=" + encodeURIComponent(senderUrl);
       document.getElementById("senderUrl").textContent = senderUrl;

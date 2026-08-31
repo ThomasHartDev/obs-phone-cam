@@ -94,6 +94,10 @@ body {
   font-weight: 600;
   cursor: pointer;
 }
+a.copybtn {
+  display: inline-block;
+  text-decoration: none;
+}
 .copybtn:hover {
   filter: brightness(1.08);
 }
