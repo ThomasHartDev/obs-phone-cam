@@ -15,6 +15,15 @@ import {
   checkpoint,
 } from "../public/board-engine.js";
 
+test("undo moves the current items array instead of cloning it", () => {
+  const board = createBoard();
+  beginInk(board, "pen", "#000", 4, 1, 1, 1);
+  const live = board.items;
+  assert.equal(undo(board), true);
+  assert.equal(board.future[0], live);
+  assert.notEqual(board.items, live);
+});
+
 test("ink stroke records points and undo/redo restores it", () => {
   const board = createBoard();
   const ink = beginInk(board, "pen", "#e24a3b", 6, 10, 10, 1);
