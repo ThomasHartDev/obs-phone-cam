@@ -12,7 +12,6 @@ export const SLIDERS = [
   { p: "saturation", label: "Saturation", min: 0, max: 2, step: 0.01 },
   { p: "skin", label: "Skin warmth", min: 0, max: 0.3, step: 0.005 },
   { p: "lens", label: "Lens fix", min: -0.4, max: 0.4, step: 0.01 },
-  { p: "slim", label: "Slim face", min: 0, max: 0.35, step: 0.01 },
   { p: "zoom", label: "Zoom", min: 1, max: 2, step: 0.01 },
   { p: "soften", label: "Soften", min: 0, max: 1, step: 0.01 },
   { p: "blur", label: "Background blur", min: 0, max: 1, step: 0.01 },
