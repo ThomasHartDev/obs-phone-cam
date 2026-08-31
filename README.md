@@ -52,14 +52,14 @@ The landing page connects as a **controller** (not the OBS receiver), so you can
 - **Mirror** — horizontal flip (selfie-style)
 - **Flip V** — vertical flip (upside-down mount / orientation fix)
 - **Rotate 90°**, **Front/Back** camera, resolution, mic
-- All filter presets + sliders (exposure, temp, lens fix, slim, zoom, blur, …)
+- All filter presets + sliders (exposure, temp, lens fix, zoom, blur, …)
 - A/B hold (raw vs graded), calibrate wipe, reset
 
 Phone HUD still works; both stay in sync over the signaling WebSocket.
 
 ## Camera filters
 
-Tap **Adjust** on the phone to open a real-time filter pipeline that runs on the phone's GPU before the frame ever leaves it, so OBS receives an already-corrected feed. It is one WebGL fragment shader per pixel: undo the capture rotation, apply geometry (mirror, zoom, lens-undistort for the front cam's wide-angle bulge, a subtle central slim), then grade color (exposure, white balance, tint, contrast, saturation, selective skin warmth). Background blur uses MediaPipe selfie segmentation when the runtime is present.
+Tap **Adjust** on the phone to open a real-time filter pipeline that runs on the phone's GPU before the frame ever leaves it, so OBS receives an already-corrected feed. It is one WebGL fragment shader per pixel: undo the capture rotation, apply geometry (mirror, zoom, lens-undistort for the front cam's wide-angle bulge), then grade color (exposure, white balance, tint, contrast, saturation, selective skin warmth). The front camera defaults to mirrored, same as the iPhone Camera app. Background blur uses MediaPipe selfie segmentation when the runtime is present.
 
 There are named presets, and a calibration mode that splits the frame raw vs graded so you can tune "true to life" against the untouched image. Filter math, presets, A/B, and the calibration split are covered by `npm test`; whether the corrected feed actually looks like your face is the one leg a headless browser can't judge, so that's in `docs/manual-tests/camera-filters.md`.
 

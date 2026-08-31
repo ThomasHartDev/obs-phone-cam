@@ -321,47 +321,46 @@ test("exposure slider changes overall brightness", async () => {
   await ctx.close();
 });
 
-test("Slim face narrows a centered subject (deterministic, synthetic frame)", async () => {
+test("slim face is gone and front camera defaults to mirrored", async () => {
   const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
   const page = await ctx.newPage();
-  await page.goto(`${HTTPS_BASE}/`); // same origin so we can import the module
-
-  const w = await page.evaluate(async () => {
-    const { CameraFilter, DEFAULT_PARAMS } = await import("/filters.js");
-    const S = 400,
-      barHalf = 40; // 80px white bar centered on black
-    const src = document.createElement("canvas");
-    src.width = S;
-    src.height = S;
-    const sx = src.getContext("2d");
-    sx.fillStyle = "#000";
-    sx.fillRect(0, 0, S, S);
-    sx.fillStyle = "#fff";
-    sx.fillRect(S / 2 - barHalf, 0, barHalf * 2, S);
-
-    const target = document.createElement("canvas");
-    const f = new CameraFilter(target);
-    const readback = document.createElement("canvas");
-    readback.width = S;
-    readback.height = S;
-    const rx = readback.getContext("2d");
-    const measure = (slim) => {
-      f.setSize(S, S);
-      f.render(src, 0, { ...DEFAULT_PARAMS, slim }, S, S);
-      rx.clearRect(0, 0, S, S);
-      rx.drawImage(target, 0, 0);
-      const row = rx.getImageData(0, S / 2, S, 1).data;
-      let n = 0;
-      for (let i = 0; i < row.length; i += 4) if (row[i] > 128) n++;
-      return n; // white pixels across the middle row = subject width
+  await page.goto(`${HTTPS_BASE}/`);
+  const fromModule = await page.evaluate(async () => {
+    const { DEFAULT_PARAMS, PRESETS } = await import("/filters.js");
+    const { SLIDERS } = await import("/control-panel.js");
+    return {
+      hasSlimParam: "slim" in DEFAULT_PARAMS,
+      presetSlim: Object.values(PRESETS).some((p) => "slim" in p && p.slim),
+      sliderSlim: SLIDERS.some((s) => s.p === "slim"),
+      defaultMirror: DEFAULT_PARAMS.mirror,
     };
-    return { base: measure(0), slim: measure(0.3) };
   });
+  assert.equal(fromModule.hasSlimParam, false);
+  assert.equal(fromModule.presetSlim, false);
+  assert.equal(fromModule.sliderSlim, false);
+  assert.equal(fromModule.defaultMirror, true);
 
-  assert.ok(w.base > 40, `bar should be visible at slim 0, got ${w.base}px`);
-  assert.ok(
-    w.slim < w.base * 0.88,
-    `slim should narrow the subject (base ${w.base}px -> slim ${w.slim}px)`,
+  const sender = await ctx.newPage();
+  await sender.goto(`${HTTPS_BASE}/sender.html`);
+  await sender.waitForFunction(
+    () => document.getElementById("preview").width > 0,
+    { timeout: 20000 },
+  );
+  const noSlim = await sender.evaluate(
+    () => !document.querySelector('[data-p="slim"]'),
+  );
+  assert.equal(noSlim, true, "phone HUD must not show Slim face");
+  const rear = await sender.evaluate(() => ({
+    facing: window.__obscam.facing,
+    mirror: window.__obscam.params.mirror,
+  }));
+  assert.equal(rear.facing, "environment");
+  assert.equal(rear.mirror, false, "rear camera is unmirrored like Camera.app");
+  await sender.click("#flip");
+  await sender.waitForFunction(
+    () =>
+      window.__obscam.facing === "user" && window.__obscam.params.mirror === true,
+    { timeout: 8000 },
   );
   await ctx.close();
 });

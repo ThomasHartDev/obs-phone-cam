@@ -28,13 +28,13 @@
           <label>Saturation<input type="range" data-p="saturation" min="0" max="2" step="0.01" /></label>
           <label>Skin warmth<input type="range" data-p="skin" min="0" max="0.3" step="0.005" /></label>
           <label>Lens fix<input type="range" data-p="lens" min="-0.4" max="0.4" step="0.01" /></label>
-          <label>Slim face<input type="range" data-p="slim" min="0" max="0.35" step="0.01" /></label>
+
           <label>Zoom<input type="range" data-p="zoom" min="1" max="2" step="0.01" /></label>
           <label>Soften<input type="range" data-p="soften" min="0" max="1" step="0.01" /></label>
           <label>Background blur<input type="range" data-p="blur" min="0" max="1" step="0.01" /></label>
         </div>
         <div class="toggles">
-          <label><input id="mirror" type="checkbox" /> Mirror (H)</label>
+          <label><input id="mirror" type="checkbox" checked /> Mirror (H)</label>
           <label><input id="flipV" type="checkbox" /> Flip V</label>
           <label><input id="calib" type="checkbox" /> Calibrate (raw | you)</label>
           <button id="reset" type="button">Reset</button>
@@ -102,9 +102,22 @@
       function loadParams() {
         try {
           const saved = JSON.parse(localStorage.getItem(STORE) || "null");
-          if (saved) return { ...DEFAULT_PARAMS, ...saved };
+          if (saved && typeof saved === "object") {
+            delete saved.slim;
+            const merged = { ...DEFAULT_PARAMS, ...saved };
+            delete merged.slim;
+            if (localStorage.getItem("obscam.mirrorDefaultV1") !== "1") {
+              merged.mirror = DEFAULT_PARAMS.mirror;
+              localStorage.setItem("obscam.mirrorDefaultV1", "1");
+            }
+            return merged;
+          }
         } catch {}
         return { ...PRESETS["True to Life"] };
+      }
+      function applyFacingMirror() {
+        params.mirror = facing === "user";
+        saveParams();
       }
       function saveParams() {
         try {
@@ -468,6 +481,7 @@
         if (op === "facing" && (msg.facing === "user" || msg.facing === "environment")) {
           facing = msg.facing;
           document.body.dataset.facing = facing;
+          applyFacingMirror();
           await getCamera();
           await renegotiateMedia();
           broadcastState();
@@ -476,6 +490,7 @@
         if (op === "flipCamera") {
           facing = facing === "environment" ? "user" : "environment";
           document.body.dataset.facing = facing;
+          applyFacingMirror();
           await getCamera();
           await renegotiateMedia();
           broadcastState();
@@ -512,6 +527,8 @@
       flipBtn.onclick = async () => {
         facing = facing === "environment" ? "user" : "environment";
         document.body.dataset.facing = facing;
+        applyFacingMirror();
+        syncUI();
         await getCamera();
         await renegotiateMedia();
         broadcastState();
@@ -553,6 +570,7 @@
       }
       function applyPreset(name) {
         params = { ...PRESETS[name] };
+        applyFacingMirror();
         syncUI();
         saveParams();
         markActivePreset(name);
@@ -619,6 +637,7 @@
       abBtn.addEventListener("pointerup", abUp);
       abBtn.addEventListener("pointerleave", abUp);
       abBtn.addEventListener("pointercancel", abUp);
+      applyFacingMirror();
       syncUI();
 
       // Expose for e2e / debugging (remote control path reads the same state).

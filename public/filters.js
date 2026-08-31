@@ -18,11 +18,10 @@ export const DEFAULT_PARAMS = {
   saturation: 1, // 0..2
   skin: 0, // 0..0.3  selective warmth on skin tones
   lens: 0, // -0.4..0.4  >0 counters wide-angle barrel bulge
-  slim: 0, // 0..0.35  horizontal slim of the central band (thinner face)
   zoom: 1, // 1..2  crop in (tighter FOV = flatter face)
   soften: 0, // 0..1  undo iOS over-sharpening
   blur: 0, // 0..1  background blur (telephoto DOF, needs segmentation)
-  mirror: false, // true = flip L/R (selfie-natural); false = true orientation
+  mirror: true, // front camera matches iPhone Camera.app (mirrored selfie)
   flipV: false, // true = flip top/bottom (upside-down mount / orientation fix)
   calib: false, // split-screen raw | graded
   split: 0.5, // wipe position when calib on
@@ -31,10 +30,7 @@ export const DEFAULT_PARAMS = {
 // Named starting points. "True to Life" is the default: a touch of lens
 // correction + neutral color, the honest baseline to tune from.
 export const PRESETS = {
-  // Default: gently correct the wide-angle bulge (lens) and a light slim back
-  // toward how you look in a mirror. Kept subtle on purpose — the iPhone front
-  // cam widens whatever's centered, but overcorrecting reads as a filter.
-  "True to Life": { ...DEFAULT_PARAMS, lens: 0.1, slim: 0.08, contrast: 1.02 },
+  "True to Life": { ...DEFAULT_PARAMS, lens: 0.1, contrast: 1.02 },
   Natural: { ...DEFAULT_PARAMS },
   "Warm Studio": {
     ...DEFAULT_PARAMS,
@@ -43,16 +39,12 @@ export const PRESETS = {
     exposure: 0.15,
     contrast: 1.05,
     lens: 0.1,
-    slim: 0.08,
   },
-  Cool: { ...DEFAULT_PARAMS, temp: -0.2, saturation: 0.95, lens: 0.1, slim: 0.08 },
-  // "Filmed from across the room": crop in for telephoto flatten + blur the
-  // background so the face pops. Kept gentle so it reads as a lens, not a filter.
+  Cool: { ...DEFAULT_PARAMS, temp: -0.2, saturation: 0.95, lens: 0.1 },
   Telephoto: {
     ...DEFAULT_PARAMS,
     zoom: 1.2,
     lens: 0.1,
-    slim: 0.06,
     blur: 0.55,
     contrast: 1.03,
   },
@@ -83,7 +75,6 @@ uniform float uMirror;   // +1 keep, -1 flip x
 uniform float uFlipV;    // +1 keep, -1 flip y
 uniform float uZoom;     // >=1 crop in
 uniform float uLens;     // barrel-correction strength
-uniform float uSlim;     // horizontal compression of the central band
 uniform vec2  uTexel;    // 1/sourceSize for soften taps
 uniform float uSoften;
 uniform float uExposure;
@@ -100,11 +91,6 @@ uniform float uBlur;      // background-blur strength (telephoto DOF)
 // Map an output UV to a source UV through rotation + geometry.
 vec2 sourceUv(vec2 uv) {
   vec2 c = uv - 0.5;
-  // Face slim (viewer space, before rotation so it's along the visible width):
-  // widen the sampling in the central band and leave the frame edges anchored,
-  // so the subject reads thinner without an obvious whole-frame squeeze.
-  float e = 2.0 * c.x;            // -1..1 across the width
-  c.x *= (1.0 + uSlim * (1.0 - e * e));
   c = uInvRot * c;          // undo the canvas rotation
   c.x *= uMirror;           // mirror L/R in source space
   c.y *= uFlipV;            // flip top/bottom
@@ -250,7 +236,6 @@ export class CameraFilter {
       "uFlipV",
       "uZoom",
       "uLens",
-      "uSlim",
       "uTexel",
       "uSoften",
       "uExposure",
@@ -318,7 +303,6 @@ export class CameraFilter {
     gl.uniform1f(this.u.uFlipV, p.flipV ? -1 : 1);
     gl.uniform1f(this.u.uZoom, p.zoom);
     gl.uniform1f(this.u.uLens, p.lens);
-    gl.uniform1f(this.u.uSlim, p.slim || 0);
     gl.uniform2f(this.u.uTexel, 1 / vw, 1 / vh);
     gl.uniform1f(this.u.uSoften, p.soften);
     gl.uniform1f(this.u.uExposure, p.exposure);
