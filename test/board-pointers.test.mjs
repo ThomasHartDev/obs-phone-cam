@@ -11,10 +11,16 @@ test("palm touch is ignored while the pencil is down", () => {
   const pointers = new Map([
     [1, { type: "pen", x: 10, y: 10 }],
   ]);
-  assert.equal(shouldIgnoreTouch("touch", pointers, false), true);
-  assert.equal(shouldIgnoreTouch("pen", pointers, false), false);
-  assert.equal(shouldIgnoreTouch("touch", new Map(), true), true);
-  assert.equal(shouldIgnoreTouch("touch", new Map(), false), false);
+  assert.equal(shouldIgnoreTouch("touch", pointers, "pen"), true);
+  assert.equal(shouldIgnoreTouch("pen", pointers, "pen"), false);
+  assert.equal(shouldIgnoreTouch("touch", new Map(), "pen"), true);
+  assert.equal(shouldIgnoreTouch("touch", new Map(), null), false);
+});
+
+test("finger drawing still gets move events", () => {
+  const pointers = new Map([[1, { type: "touch" }]]);
+  assert.equal(shouldIgnoreTouch("touch", pointers, "touch"), false);
+  assert.equal(shouldIgnoreTouch("touch", pointers, "ink"), false);
 });
 
 test("pinch starts only with two fingers, not pencil plus palm", () => {

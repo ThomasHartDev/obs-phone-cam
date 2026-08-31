@@ -15,11 +15,12 @@ export function touchCount(pointers) {
   return n;
 }
 
-/** Palm resting on glass while the Pencil is down. */
-export function shouldIgnoreTouch(pointerType, pointers, drawing) {
+/** Palm only. Never ignore the pointer that is actually drawing. */
+export function shouldIgnoreTouch(pointerType, pointers, drawingPointerType) {
   if (pointerType !== "touch") return false;
-  if (drawing) return true;
-  return hasPen(pointers);
+  if (hasPen(pointers)) return true;
+  if (drawingPointerType === "pen") return true;
+  return false;
 }
 
 /** Two fingers only. Never Pencil + palm. */

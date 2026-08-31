@@ -820,6 +820,45 @@ test("iPad board streams drawn frames into its OBS receiver without kicking the 
   }
 });
 
+test("board drag produces a stroke with many points, not a single dot", async () => {
+  const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
+  try {
+    const board = await ctx.newPage();
+    await board.goto(`${HTTPS_BASE}/board.html`);
+    await board.waitForFunction(
+      () => document.body.dataset.boardReady === "1" && window.__board,
+      null,
+      { timeout: 15000 },
+    );
+    const n = await board.evaluate(() => {
+      const c = document.getElementById("board");
+      const r = c.getBoundingClientRect();
+      const fire = (type, i) => {
+        c.dispatchEvent(
+          new PointerEvent(type, {
+            pointerId: 7,
+            pointerType: "touch",
+            clientX: r.left + 80 + i * 10,
+            clientY: r.top + 160,
+            bubbles: true,
+            cancelable: true,
+            pressure: 0.5,
+          }),
+        );
+      };
+      fire("pointerdown", 0);
+      for (let i = 1; i <= 12; i++) fire("pointermove", i);
+      fire("pointerup", 12);
+      const ink = window.__board.scene.items.filter((it) => it.kind === "ink");
+      const last = ink[ink.length - 1];
+      return last ? last.points.length : 0;
+    });
+    assert.ok(n >= 8, `expected a dragged stroke, got ${n} points`);
+  } finally {
+    await ctx.close();
+  }
+});
+
 test("board undo restores a stroke after erase", async () => {
   const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
   try {
