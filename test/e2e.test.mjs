@@ -686,6 +686,20 @@ test("viewer role receives the same live frames without kicking OBS receiver", a
   await ctx.close();
 });
 
+test("HTTP trust page is available without a cert warning", async () => {
+  const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
+  try {
+    const page = await ctx.newPage();
+    const res = await page.goto(`${HTTP_BASE}/trust.html`);
+    assert.equal(res.ok(), true);
+    const body = await page.textContent("body");
+    assert.match(body || "", /Certificate Trust/);
+    assert.match(await page.getAttribute("a.copybtn", "href") || "", /ca\.mobileconfig/);
+  } finally {
+    await ctx.close();
+  }
+});
+
 test("pair pages show iPhone and iPad QRs without opening live slots", async () => {
   const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
   try {

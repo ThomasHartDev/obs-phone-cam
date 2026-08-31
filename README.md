@@ -34,10 +34,11 @@ npm start
 Then:
 
 1. Double-click the app (or `npm start`). Three tabs open: **laptop controls**, the **iPhone feed**, and the **iPad board feed**. Scan the QRs on the controls page with each device.
-2. Scan the iPhone tab with your iPhone (same Wi-Fi). Tap through the one-time cert warning, allow the camera. Scan the iPad tab with your iPad.
-3. In OBS: **Sources → + → Browser**, URL `http://localhost:8444/receiver.html` (plain http), size = your canvas.
-4. After the phone is live, leave it alone. Use the laptop control panel for everything else.
-5. In OBS add a second Browser Source at `http://localhost:8444/board-receiver.html` for the iPad board.
+2. First time only: on the phone/iPad open `http://<laptop>:8444/trust.html` (QR is on the controls page, section 0). Install the profile, then Settings → General → About → Certificate Trust Settings → enable Phone Cam. After that the same https camera/board links have no Safari warning.
+3. Scan the iPhone QR, allow the camera. Scan the iPad QR.
+4. In OBS: **Sources → + → Browser**, URL `http://localhost:8444/receiver.html` (plain http), size = your canvas.
+5. After the phone is live, leave it alone. Use the laptop control panel for everything else.
+6. In OBS add a second Browser Source at `http://localhost:8444/board-receiver.html` for the iPad board.
 
 Safari on iPad cannot share another app's screen, so the board page itself is the drawing surface. Pick **Green (chroma)** paper if you want to key the drawing over the camera in OBS. On a desktop browser that supports window share, the board page also has **Share window** for a real Excalidraw tab.
 

@@ -16,6 +16,12 @@
       <p class="note" id="obsLabel"></p>
       <p class="mono" id="obsUrl">…</p>
       <p class="note">
+        First time: on the laptop open
+        <a id="trustLink" href="/trust.html">Trust this laptop</a>
+        from the iPhone/iPad (http, no warning), install, then enable it in
+        Certificate Trust Settings. After that this same https link is quiet.
+      </p>
+      <p class="note">
         <a href="/">Laptop camera controls</a>
       </p>
     </main>
@@ -41,7 +47,7 @@
         forWhat === "ipad" ? "Scan with your iPad" : "Scan with your iPhone";
       document.getElementById("blurb").textContent =
         forWhat === "ipad"
-          ? "Opens the whiteboard. Same Wi-Fi, Safari, tap through the cert if it asks."
+          ? "Opens the whiteboard. Same Wi-Fi, Safari."
           : "Opens the camera sender. Same Wi-Fi, Safari, allow the camera.";
       document.getElementById("qr").src =
         "/qr?url=" + encodeURIComponent(deviceUrl);
@@ -51,6 +57,8 @@
           ? "OBS Browser Source for the board:"
           : "OBS Browser Source for the camera:";
       document.getElementById("obsUrl").textContent = obsUrl;
+      document.getElementById("trustLink").href =
+        `http://${ip}:${httpPort}/trust.html`;
       document.body.dataset.for = forWhat;
     </script>
   </body>

@@ -1,5 +1,7 @@
 node_modules/
 certs/*.pem
+certs/mkcert.exe
+certs/mkcert
 *.log
 .DS_Store
 public/vendor/
