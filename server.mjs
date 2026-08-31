@@ -579,14 +579,22 @@ httpServer.on("error", (e) => onListenError(e, HTTP_PORT));
 httpsWss.on("error", (e) => onListenError(e, PORT));
 httpWss.on("error", (e) => onListenError(e, HTTP_PORT));
 
+let httpsUp = false;
+let httpUp = false;
+function maybeOpenLaunchTabs() {
+  if (!httpsUp || !httpUp) return;
+  openLaunchTabs(openBrowser, launchUrls(PORT, HTTP_PORT));
+}
+
 httpsServer.listen(PORT, "0.0.0.0", () => {
+  httpsUp = true;
   const ips = lanIps();
   console.log("\n  obs-phone-cam is running.");
   console.log(`  TLS: ${tls.source}\n`);
-  console.log("  On the laptop, two tabs open: iPhone QR and iPad QR.");
-  console.log(`    https://localhost:${PORT}/pair.html?for=phone`);
-  console.log(`    https://localhost:${PORT}/pair.html?for=ipad`);
-  console.log(`    Controls: https://localhost:${PORT}/\n`);
+  console.log("  Laptop tabs: controls, iPhone feed, iPad feed.");
+  console.log(`    https://localhost:${PORT}/`);
+  console.log(`    http://localhost:${HTTP_PORT}/receiver.html`);
+  console.log(`    http://localhost:${HTTP_PORT}/board-receiver.html\n`);
   console.log("  On the iPhone (same Wi-Fi), open the sender page:");
   for (const ip of ips) console.log(`    https://${ip}:${PORT}/sender.html`);
   console.log("  On the iPad, open the whiteboard:");
@@ -598,9 +606,12 @@ httpsServer.listen(PORT, "0.0.0.0", () => {
   console.log(
     `    http://localhost:${HTTP_PORT}/board-receiver.html  (iPad board)\n`,
   );
-  openLaunchTabs(openBrowser, launchUrls(PORT));
+  maybeOpenLaunchTabs();
 });
-httpServer.listen(HTTP_PORT, "0.0.0.0", () => {});
+httpServer.listen(HTTP_PORT, "0.0.0.0", () => {
+  httpUp = true;
+  maybeOpenLaunchTabs();
+});
 
 // Pop the QR/landing page in the default browser so the user never touches a URL.
 // Skipped in tests/CI via OBS_NO_OPEN.
