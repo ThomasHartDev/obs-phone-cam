@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Phone Cam — Pair</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body class="landing pair">
+    <main>
+      <p class="eyebrow" id="kind">Scan</p>
+      <h1 id="title">Pair a device</h1>
+      <p class="sub" id="blurb"></p>
+      <img id="qr" alt="QR code" width="280" height="280" />
+      <p class="mono" id="deviceUrl">…</p>
+      <p class="note" id="obsLabel"></p>
+      <p class="mono" id="obsUrl">…</p>
+      <p class="note">
+        <a href="/">Laptop camera controls</a>
+      </p>
+    </main>
+    <script type="module">
+      const forWhat = new URLSearchParams(location.search).get("for") === "ipad"
+        ? "ipad"
+        : "phone";
+      const { ips, port, httpPort } = await fetch("/lan.json").then((r) => r.json());
+      const ip = ips[0] || location.hostname;
+      const phoneUrl = `https://${ip}:${port}/sender.html`;
+      const boardUrl = `https://${ip}:${port}/board.html`;
+      const deviceUrl = forWhat === "ipad" ? boardUrl : phoneUrl;
+      const obsUrl =
+        forWhat === "ipad"
+          ? `http://localhost:${httpPort}/board-receiver.html`
+          : `http://localhost:${httpPort}/receiver.html`;
+
+      document.title =
+        forWhat === "ipad" ? "Phone Cam — iPad" : "Phone Cam — iPhone";
+      document.getElementById("kind").textContent =
+        forWhat === "ipad" ? "iPad" : "iPhone";
+      document.getElementById("title").textContent =
+        forWhat === "ipad" ? "Scan with your iPad" : "Scan with your iPhone";
+      document.getElementById("blurb").textContent =
+        forWhat === "ipad"
+          ? "Opens the whiteboard. Same Wi-Fi, Safari, tap through the cert if it asks."
+          : "Opens the camera sender. Same Wi-Fi, Safari, allow the camera.";
+      document.getElementById("qr").src =
+        "/qr?url=" + encodeURIComponent(deviceUrl);
+      document.getElementById("deviceUrl").textContent = deviceUrl;
+      document.getElementById("obsLabel").textContent =
+        forWhat === "ipad"
+          ? "OBS Browser Source for the board:"
+          : "OBS Browser Source for the camera:";
+      document.getElementById("obsUrl").textContent = obsUrl;
+      document.body.dataset.for = forWhat;
+    </script>
+  </body>
+</html>

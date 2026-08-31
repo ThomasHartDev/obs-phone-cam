@@ -15,6 +15,7 @@ import { WebSocketServer } from "ws";
 import selfsigned from "selfsigned";
 import QRCode from "qrcode";
 import { createDrawingsStore, isDocId } from "./drawings-store.mjs";
+import { launchUrls, openLaunchTabs } from "./launch.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -582,8 +583,10 @@ httpsServer.listen(PORT, "0.0.0.0", () => {
   const ips = lanIps();
   console.log("\n  obs-phone-cam is running.");
   console.log(`  TLS: ${tls.source}\n`);
-  console.log("  On the laptop, open this to get the QR code + OBS URL:");
-  console.log(`    https://localhost:${PORT}/\n`);
+  console.log("  On the laptop, two tabs open: iPhone QR and iPad QR.");
+  console.log(`    https://localhost:${PORT}/pair.html?for=phone`);
+  console.log(`    https://localhost:${PORT}/pair.html?for=ipad`);
+  console.log(`    Controls: https://localhost:${PORT}/\n`);
   console.log("  On the iPhone (same Wi-Fi), open the sender page:");
   for (const ip of ips) console.log(`    https://${ip}:${PORT}/sender.html`);
   console.log("  On the iPad, open the whiteboard:");
@@ -595,7 +598,7 @@ httpsServer.listen(PORT, "0.0.0.0", () => {
   console.log(
     `    http://localhost:${HTTP_PORT}/board-receiver.html  (iPad board)\n`,
   );
-  openBrowser(`https://localhost:${PORT}/`);
+  openLaunchTabs(openBrowser, launchUrls(PORT));
 });
 httpServer.listen(HTTP_PORT, "0.0.0.0", () => {});
 
