@@ -25,6 +25,7 @@ import {
   shouldStartPinch,
   dropTouches,
 } from "/board-pointers.js";
+import { attachLogPanel, log, getLogs, refreshLogPanel } from "/board-log.js";
 
 const canvas = document.getElementById("board");
 const ctx = canvas.getContext("2d", { alpha: false });
@@ -55,6 +56,8 @@ let openIds = [];
 let active = null;
 let dirty = false;
 let saveTimer = 0;
+let frameDirty = true;
+let saving = false;
 
 const setStatus = (t, cls = "") => {
   statusEl.textContent = t;
@@ -79,10 +82,18 @@ function resizeCanvas() {
 }
 
 function paint() {
-  if (sharing) return;
+  frameDirty = true;
+}
+
+function drawIfDirty() {
+  if (!frameDirty || sharing) return;
+  frameDirty = false;
+  const t0 = performance.now();
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   renderBoard(ctx, scene, view);
+  const ms = performance.now() - t0;
+  if (ms > 24) log("warn", "paint_slow", { ms: Math.round(ms), items: scene.items.length });
 }
 
 function screenToWorld(sx, sy) {
@@ -213,18 +224,23 @@ function bindToolbar() {
   modeEl.onchange = () => {
     eraseMode = modeEl.value === "element" ? "element" : "pixel";
   };
-  document.getElementById("undoBtn").onclick = () => {
-    undo(scene);
-    afterEdit();
-  };
-  document.getElementById("redoBtn").onclick = () => {
-    redo(scene);
-    afterEdit();
-  };
+  document.getElementById("undoBtn").onclick = () => runUndo("tap");
+  document.getElementById("redoBtn").onclick = () => runRedo("tap");
   document.getElementById("clearBtn").onclick = () => {
+    log("info", "clear_tap", { items: scene.items.length });
     clearBoard(scene);
     afterEdit();
   };
+  const logBtn = document.getElementById("logBtn");
+  const logPanel = document.getElementById("boardLog");
+  if (logBtn && logPanel) {
+    attachLogPanel(logPanel);
+    logBtn.onclick = () => {
+      logPanel.hidden = !logPanel.hidden;
+      logBtn.setAttribute("aria-pressed", String(!logPanel.hidden));
+      if (!logPanel.hidden) refreshLogPanel();
+    };
+  }
   document.getElementById("paper").onchange = (e) => {
     setPaper(scene, e.target.value);
     afterEdit();
@@ -291,6 +307,43 @@ function afterEdit() {
   scheduleSave();
 }
 
+function runUndo(from) {
+  const t0 = performance.now();
+  log("info", "undo", {
+    from,
+    history: scene.history.length,
+    items: scene.items.length,
+  });
+  try {
+    const ok = undo(scene);
+    log("info", "undo_done", {
+      ok,
+      ms: Math.round(performance.now() - t0),
+      items: scene.items.length,
+    });
+    afterEdit();
+    return ok;
+  } catch (err) {
+    log("error", "undo_throw", { message: String(err && err.message ? err.message : err) });
+    return false;
+  }
+}
+
+function runRedo(from) {
+  const t0 = performance.now();
+  try {
+    const ok = redo(scene);
+    log("info", "redo_done", {
+      from,
+      ok,
+      ms: Math.round(performance.now() - t0),
+    });
+    afterEdit();
+  } catch (err) {
+    log("error", "redo_throw", { message: String(err && err.message ? err.message : err) });
+  }
+}
+
 function persistOpen() {
   try {
     localStorage.setItem(OPEN_KEY, JSON.stringify(openIds));
@@ -308,21 +361,39 @@ function scheduleSave() {
 }
 
 async function flushSave() {
-  if (!active || !dirty) return active;
-  const doc = sceneToDoc(active, scene);
-  const r = await fetch("/drawings/" + encodeURIComponent(doc.id), {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(doc),
-  });
-  if (!r.ok) throw new Error("save failed");
-  const { drawing } = await r.json();
-  active = drawing;
-  dirty = false;
-  upsertCatalog(metaOf(drawing));
-  renderTabs();
-  renderLibrary();
-  return drawing;
+  if (!active || !dirty || saving) return active;
+  saving = true;
+  const t0 = performance.now();
+  try {
+    const doc = sceneToDoc(active, scene);
+    const packed = JSON.stringify(doc);
+    log("info", "save_start", {
+      bytes: packed.length,
+      items: scene.items.length,
+      packMs: Math.round(performance.now() - t0),
+    });
+    const r = await fetch("/drawings/" + encodeURIComponent(doc.id), {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: packed,
+    });
+    if (!r.ok) throw new Error("save failed");
+    const { drawing } = await r.json();
+    active = drawing;
+    dirty = false;
+    upsertCatalog(metaOf(drawing));
+    renderTabs();
+    const lib = document.getElementById("library");
+    if (lib && !lib.hidden) renderLibrary();
+    log("info", "save_done", { ms: Math.round(performance.now() - t0) });
+    return drawing;
+  } catch (err) {
+    log("error", "save_fail", { message: String(err && err.message ? err.message : err) });
+    throw err;
+  } finally {
+    saving = false;
+    if (dirty) scheduleSave();
+  }
 }
 
 function upsertCatalog(meta) {
@@ -697,13 +768,11 @@ window.addEventListener("keydown", (e) => {
   const key = e.key.toLowerCase();
   if ((e.metaKey || e.ctrlKey) && key === "z") {
     e.preventDefault();
-    if (e.shiftKey) redo(scene);
-    else undo(scene);
-    afterEdit();
+    if (e.shiftKey) runRedo("keys");
+    else runUndo("keys");
   } else if ((e.metaKey || e.ctrlKey) && key === "y") {
     e.preventDefault();
-    redo(scene);
-    afterEdit();
+    runRedo("keys");
   }
 });
 
@@ -717,9 +786,20 @@ resizeCanvas();
 startCapture();
 paint();
 (function loop() {
-  paint();
+  try {
+    drawIfDirty();
+  } catch (err) {
+    log("error", "paint_throw", { message: String(err && err.message ? err.message : err) });
+  }
   requestAnimationFrame(loop);
 })();
+window.addEventListener("error", (e) => {
+  log("error", "window_error", { message: String(e.message || e.error || "error") });
+});
+window.addEventListener("unhandledrejection", (e) => {
+  log("error", "unhandled", { message: String(e.reason && e.reason.message ? e.reason.message : e.reason) });
+});
+log("info", "boot", { href: location.href });
 setStatus("Waiting for OBS…", "warn");
 if (peerPresent) offer();
 bootDocs()
@@ -754,10 +834,9 @@ Object.defineProperty(window, "__board", {
       afterEdit();
       return scene.items.length;
     },
+    getLogs,
     undoLast() {
-      const ok = undo(scene);
-      paint();
-      return ok;
+      return runUndo("test");
     },
     punch(x, y, r, mode) {
       checkpoint(scene);

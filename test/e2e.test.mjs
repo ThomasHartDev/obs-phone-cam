@@ -802,6 +802,15 @@ test("board undo restores a stroke after erase", async () => {
     });
     assert.equal(restored.ok, true);
     assert.equal(restored.n, 1);
+    await board.waitForFunction(
+      async () => {
+        const r = await fetch("/board-logs");
+        const j = await r.json();
+        return Array.isArray(j.logs) && j.logs.some((l) => l.event === "undo_done");
+      },
+      null,
+      { timeout: 5000 },
+    );
     await board.click('[data-tool="eraser"]');
     const ui = await board.evaluate(() => ({
       modeHidden: document.getElementById("eraseMode").hidden,

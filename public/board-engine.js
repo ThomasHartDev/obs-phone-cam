@@ -150,14 +150,14 @@ function splitInkOutside(item, x, y, radius) {
 
 export function undo(board) {
   if (!board.history.length) return false;
-  board.future.push(cloneItems(board.items));
+  board.future.push(board.items);
   board.items = board.history.pop();
   return true;
 }
 
 export function redo(board) {
   if (!board.future.length) return false;
-  board.history.push(cloneItems(board.items));
+  board.history.push(board.items);
   board.items = board.future.pop();
   return true;
 }

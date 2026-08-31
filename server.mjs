@@ -6,6 +6,7 @@
 import http from "node:http";
 import https from "node:https";
 import fs from "node:fs";
+import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,6 +22,8 @@ const CERT_DIR = path.join(__dirname, "certs");
 const DRAWINGS_DIR =
   process.env.DRAWINGS_DIR || path.join(__dirname, "data", "drawings");
 const drawings = createDrawingsStore(DRAWINGS_DIR);
+const BOARD_LOG = path.join(__dirname, "data", "board.log");
+const boardLogMem = [];
 const PORT = Number(process.env.PORT || 8443);
 
 // getUserMedia on iOS Safari requires a secure context. On a LAN IP that means
@@ -165,6 +168,37 @@ function json(res, status, obj) {
     .end(JSON.stringify(obj));
 }
 
+async function handleBoardLogs(url, req, res) {
+  if (url.pathname !== "/board-logs") return false;
+  if (req.method === "GET") {
+    json(res, 200, { logs: boardLogMem.slice(-200) });
+    return true;
+  }
+  if (req.method !== "POST") return false;
+  let body;
+  try {
+    body = JSON.parse(await readBody(req, 200_000));
+  } catch {
+    json(res, 400, { error: "invalid json" });
+    return true;
+  }
+  const rows = Array.isArray(body?.logs) ? body.logs : [];
+  for (const row of rows) {
+    if (!row || typeof row !== "object") continue;
+    boardLogMem.push(row);
+  }
+  if (boardLogMem.length > 500) boardLogMem.splice(0, boardLogMem.length - 500);
+  json(res, 200, { ok: true, n: rows.length });
+  const lines = rows.map((r) => JSON.stringify(r)).join("\n") + (rows.length ? "\n" : "");
+  if (lines) {
+    fsp
+      .mkdir(path.dirname(BOARD_LOG), { recursive: true })
+      .then(() => fsp.appendFile(BOARD_LOG, lines, "utf8"))
+      .catch(() => {});
+  }
+  return true;
+}
+
 async function handleDrawings(url, req, res) {
   const pathname = url.pathname;
   if (pathname === "/drawings" && req.method === "GET") {
@@ -280,6 +314,7 @@ async function handleRequest(req, res) {
     );
     return;
   }
+  if (await handleBoardLogs(url, req, res)) return;
   if (await handleDrawings(url, req, res)) return;
   if (url.pathname === "/state" && req.method === "GET") {
     res

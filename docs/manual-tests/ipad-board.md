@@ -52,7 +52,12 @@ Safari on iPad cannot share another app (no `getDisplayMedia`). The board page i
    - Expected: both drawings survive the switch; the first is still there after reload; the list shows every save.
    - Pass / Fail:
 
-8. **Desktop window share (optional)**
+8. **Undo stays live + Logs**
+   - Action: draw several strokes, tap Undo a few times. Tap **Logs**.
+   - Expected: ink comes back immediately, you can keep drawing. Logs show `undo` then `undo_done` with a small `ms`. No freeze.
+   - Pass / Fail:
+
+9. **Desktop window share (optional)**
    - Action: open the board page in laptop Chrome, click Share window, pick an Excalidraw tab.
    - Expected: that window appears in the same OBS board source. iPad Safari will not show this button.
    - Pass / Fail:
