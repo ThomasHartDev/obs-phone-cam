@@ -28,8 +28,8 @@ Safari on iPad cannot share another app (no `getDisplayMedia`). The board page i
    - Pass / Fail:
 
 4. **Pencil / finger drawing**
-   - Action: draw a box, an arrow, and a handwritten word. Undo once.
-   - Expected: strokes show on the iPad and in OBS with no multi-second lag. Undo removes the last mark.
+   - Action: rest your palm on the glass and write a word with Apple Pencil. Then two-finger pan.
+   - Expected: only the Pencil leaves ink. Palm does not scribble or cancel the stroke. Two fingers still pan.
    - Pass / Fail:
 
 4b. **Eraser size, mode, undo**

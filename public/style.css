@@ -164,6 +164,8 @@ html:has(body.board) {
   background: #f7f4ee;
   user-select: none;
   -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
 }
 .board #board {
   position: fixed;
