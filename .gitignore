@@ -4,6 +4,8 @@ certs/*.pem
 .DS_Store
 public/vendor/
 
+windows/*.exe
+
 data/
 
 .task/

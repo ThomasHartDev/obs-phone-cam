@@ -22,7 +22,7 @@ iPad   Safari  board.html    ──WebRTC──►  OBS  board-receiver.html  (w
 
 On the laptop that has OBS:
 
-**Windows:** double-click **`Start Phone Cam.bat`**. It installs on first run, starts the server, and opens the laptop controls plus the iPhone and iPad feed tabs.
+**Windows:** double-click **`Phone Cam.exe`** on the desktop (rebuild with `windows\build-phone-cam-exe.bat`). It starts the server if needed and always opens three tabs: laptop controls, iPhone feed, iPad board feed. `Start Phone Cam.bat` does the same via node.
 
 **Or from a terminal (any OS):**
 
