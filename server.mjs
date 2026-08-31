@@ -16,6 +16,7 @@ import QRCode from "qrcode";
 import { createDrawingsStore, isDocId } from "./drawings-store.mjs";
 import { launchUrls, openLaunchTabs } from "./launch.mjs";
 import { loadTls, buildMobileConfig } from "./tls.mjs";
+import { recognizeInkImage } from "./ink-ocr.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -269,6 +270,18 @@ async function handleRequest(req, res) {
   }
   // HTTP control path. Browsers on a public HTTPS origin cannot open
   // wss://localhost (Chrome Private Network Access), so they POST here instead.
+  if (url.pathname === "/recognize-ink" && req.method === "POST") {
+    let body;
+    try {
+      body = JSON.parse(await readBody(req, 2_000_000));
+    } catch {
+      json(res, 400, { error: "invalid json" });
+      return;
+    }
+    const text = await recognizeInkImage(body && body.image);
+    json(res, 200, { text });
+    return;
+  }
   if (url.pathname === "/control" && req.method === "POST") {
     let body;
     try {

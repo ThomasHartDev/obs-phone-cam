@@ -839,7 +839,7 @@ test("board drag produces a stroke with many points, not a single dot", async ()
             pointerId: 7,
             pointerType: "touch",
             clientX: r.left + 80 + i * 10,
-            clientY: r.top + 160,
+            clientY: r.top + 160 + Math.sin(i / 1.7) * 28,
             bubbles: true,
             cancelable: true,
             pressure: 0.5,
@@ -854,6 +854,64 @@ test("board drag produces a stroke with many points, not a single dot", async ()
       return last ? last.points.length : 0;
     });
     assert.ok(n >= 8, `expected a dragged stroke, got ${n} points`);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test("freehand rectangle ink becomes a rect shape on release", async () => {
+  const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
+  try {
+    const board = await ctx.newPage();
+    await board.goto(`${HTTPS_BASE}/board.html`);
+    await board.waitForFunction(
+      () => document.body.dataset.boardReady === "1" && window.__board,
+      null,
+      { timeout: 15000 },
+    );
+    await board.evaluate(() => {
+      const c = document.getElementById("board");
+      const r = c.getBoundingClientRect();
+      const corners = [
+        [90, 90],
+        [240, 90],
+        [240, 180],
+        [90, 180],
+        [90, 90],
+      ];
+      const pts = [];
+      for (let s = 0; s < 4; s++) {
+        const [x0, y0] = corners[s];
+        const [x1, y1] = corners[s + 1];
+        for (let i = 0; i <= 14; i++) {
+          const t = i / 14;
+          pts.push([x0 + (x1 - x0) * t, y0 + (y1 - y0) * t]);
+        }
+      }
+      const fire = (type, x, y) => {
+        c.dispatchEvent(
+          new PointerEvent(type, {
+            pointerId: 9,
+            pointerType: "touch",
+            clientX: r.left + x,
+            clientY: r.top + y,
+            bubbles: true,
+            pressure: 0.5,
+          }),
+        );
+      };
+      fire("pointerdown", pts[0][0], pts[0][1]);
+      for (const [x, y] of pts.slice(1)) fire("pointermove", x, y);
+      fire("pointerup", pts[pts.length - 1][0], pts[pts.length - 1][1]);
+    });
+    await board.waitForFunction(
+      () =>
+        window.__board.scene.items.some(
+          (it) => it.kind === "shape" && it.tool === "rect",
+        ),
+      null,
+      { timeout: 4000 },
+    );
   } finally {
     await ctx.close();
   }
