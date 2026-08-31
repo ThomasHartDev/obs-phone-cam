@@ -20,6 +20,11 @@ import {
   sceneToDoc,
   metaOf,
 } from "/board-docs.js";
+import {
+  shouldIgnoreTouch,
+  shouldStartPinch,
+  dropTouches,
+} from "/board-pointers.js";
 
 const canvas = document.getElementById("board");
 const ctx = canvas.getContext("2d", { alpha: false });
@@ -545,12 +550,21 @@ function eventPos(e) {
 function onDown(e) {
   if (sharing) return;
   e.preventDefault();
-  canvas.setPointerCapture(e.pointerId);
+  if (shouldIgnoreTouch(e.pointerType, pointers, !!current)) return;
+  if (e.pointerType === "pen") {
+    dropTouches(pointers);
+    pinch = null;
+  }
+  try {
+    canvas.setPointerCapture(e.pointerId);
+  } catch {
+    /* Safari may already own capture */
+  }
   const pos = eventPos(e);
   pointers.set(e.pointerId, { ...pos, type: e.pointerType });
-  if (pointers.size === 2) {
+  if (shouldStartPinch(pointers)) {
     current = null;
-    const pts = [...pointers.values()];
+    const pts = [...pointers.values()].filter((p) => p.type === "touch");
     pinch = {
       dist: Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y),
       panX: view.panX,
@@ -590,11 +604,23 @@ function onDown(e) {
 
 function onMove(e) {
   if (sharing) return;
+  e.preventDefault();
+  if (shouldIgnoreTouch(e.pointerType, pointers, !!current)) return;
   if (!pointers.has(e.pointerId)) return;
+  const samples =
+    e.pointerType === "pen" && typeof e.getCoalescedEvents === "function"
+      ? e.getCoalescedEvents()
+      : null;
+  const batch = samples && samples.length ? samples : [e];
+  for (const ev of batch) applyMove(ev);
+}
+
+function applyMove(e) {
   const pos = eventPos(e);
-  pointers.set(e.pointerId, { ...pos, type: e.pointerType });
-  if (pinch && pointers.size >= 2) {
-    const pts = [...pointers.values()];
+  pointers.set(e.pointerId, { ...pos, type: e.pointerType || "pen" });
+  if (pinch && shouldStartPinch(pointers)) {
+    const pts = [...pointers.values()].filter((p) => p.type === "touch");
+    if (pts.length < 2) return;
     const dist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
     const scale = Math.max(0.4, Math.min(4, pinch.scale * (dist / (pinch.dist || 1))));
     const cx = (pts[0].x + pts[1].x) / 2;
@@ -625,7 +651,9 @@ function onMove(e) {
 
 function onUp(e) {
   pointers.delete(e.pointerId);
-  if (pointers.size < 2) pinch = null;
+  if (!shouldStartPinch(pointers)) pinch = null;
+  const penStillDown = [...pointers.values()].some((p) => p.type === "pen");
+  if (penStillDown && current) return;
   if (current && current.kind === "erase" && !current.dirty) {
     if (scene.history.length) scene.history.pop();
   } else if (current) {
@@ -634,16 +662,35 @@ function onUp(e) {
   current = null;
 }
 
-canvas.addEventListener("pointerdown", onDown);
-canvas.addEventListener("pointermove", (e) => {
-  if (tool === "eraser") showEraseCursor(e.clientX, e.clientY);
-  onMove(e);
-});
+function onCancel(e) {
+  if (e.pointerType === "touch") {
+    pointers.delete(e.pointerId);
+    if (!shouldStartPinch(pointers)) pinch = null;
+    return;
+  }
+  onUp(e);
+}
+
+function blockScroll(e) {
+  e.preventDefault();
+}
+
+canvas.addEventListener("pointerdown", onDown, { passive: false });
+canvas.addEventListener(
+  "pointermove",
+  (e) => {
+    if (tool === "eraser") showEraseCursor(e.clientX, e.clientY);
+    onMove(e);
+  },
+  { passive: false },
+);
 canvas.addEventListener("pointerup", onUp);
-canvas.addEventListener("pointercancel", onUp);
+canvas.addEventListener("pointercancel", onCancel);
 canvas.addEventListener("pointerleave", () => {
   if (!pointers.size) hideEraseCursor();
 });
+canvas.addEventListener("touchstart", blockScroll, { passive: false });
+canvas.addEventListener("touchmove", blockScroll, { passive: false });
 canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 
 window.addEventListener("keydown", (e) => {
