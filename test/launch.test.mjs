@@ -2,14 +2,17 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { launchUrls, openLaunchTabs } from "../launch.mjs";
 
-test("launch opens phone and iPad pair pages, not live sender/board slots", () => {
-  const urls = launchUrls(8443);
-  assert.equal(urls.length, 2);
-  assert.equal(urls[0], "https://localhost:8443/pair.html?for=phone");
-  assert.equal(urls[1], "https://localhost:8443/pair.html?for=ipad");
+test("launch opens controls plus phone and iPad feed viewers", () => {
+  const urls = launchUrls(8443, 8444);
+  assert.deepEqual(urls, [
+    "https://localhost:8443/",
+    "http://localhost:8444/receiver.html",
+    "http://localhost:8444/board-receiver.html",
+  ]);
   assert.equal(
     urls.some((u) => u.includes("sender.html") || u.includes("board.html")),
     false,
+    "must not open live sender/board slots on the laptop",
   );
 });
 

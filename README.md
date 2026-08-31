@@ -22,7 +22,7 @@ iPad   Safari  board.html    ──WebRTC──►  OBS  board-receiver.html  (w
 
 On the laptop that has OBS:
 
-**Windows:** double-click **`Start Phone Cam.bat`**. It installs on first run, starts the server, and opens two browser tabs: scan-with-iPhone and scan-with-iPad.
+**Windows:** double-click **`Start Phone Cam.bat`**. It installs on first run, starts the server, and opens the laptop controls plus the iPhone and iPad feed tabs.
 
 **Or from a terminal (any OS):**
 
@@ -33,7 +33,7 @@ npm start
 
 Then:
 
-1. Double-click the app (or `npm start`). Two tabs open: **Scan with your iPhone** and **Scan with your iPad**. Camera controls stay at `https://localhost:8443/`.
+1. Double-click the app (or `npm start`). Three tabs open: **laptop controls**, the **iPhone feed**, and the **iPad board feed**. Scan the QRs on the controls page with each device.
 2. Scan the iPhone tab with your iPhone (same Wi-Fi). Tap through the one-time cert warning, allow the camera. Scan the iPad tab with your iPad.
 3. In OBS: **Sources → + → Browser**, URL `http://localhost:8444/receiver.html` (plain http), size = your canvas.
 4. After the phone is live, leave it alone. Use the laptop control panel for everything else.

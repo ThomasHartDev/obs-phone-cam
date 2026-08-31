@@ -1,9 +1,10 @@
-export function launchUrls(httpsPort) {
-  const port = Number(httpsPort) || 8443;
-  const base = `https://localhost:${port}`;
+export function launchUrls(httpsPort, httpPort) {
+  const https = Number(httpsPort) || 8443;
+  const http = Number(httpPort) || https + 1;
   return [
-    `${base}/pair.html?for=phone`,
-    `${base}/pair.html?for=ipad`,
+    `https://localhost:${https}/`,
+    `http://localhost:${http}/receiver.html`,
+    `http://localhost:${http}/board-receiver.html`,
   ];
 }
 
