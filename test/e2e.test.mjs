@@ -876,6 +876,64 @@ test("board drag produces a stroke with many points, not a single dot", async ()
   }
 });
 
+test("zoom buttons and select-drag move a rect", async () => {
+  const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
+  try {
+    const board = await ctx.newPage();
+    await board.goto(`${HTTPS_BASE}/board.html`);
+    await board.waitForFunction(
+      () => document.body.dataset.boardReady === "1" && window.__board,
+      null,
+      { timeout: 15000 },
+    );
+    assert.equal(await board.locator("#zoomInBtn").count(), 1);
+    await board.click("#zoomInBtn");
+    const zoomed = await board.evaluate(() => window.__board.view.scale);
+    assert.ok(zoomed > 1, `expected zoom in, got ${zoomed}`);
+    await board.click("#zoomResetBtn");
+    const reset = await board.evaluate(() => window.__board.view.scale);
+    assert.equal(reset, 1);
+
+    await board.evaluate(() => {
+      window.__board.scene.items.push({
+        kind: "shape",
+        tool: "rect",
+        color: "#1a1d23",
+        width: 4,
+        a: { x: 80, y: 80 },
+        b: { x: 200, y: 160 },
+      });
+    });
+    await board.click('[data-tool="select"]');
+    const moved = await board.evaluate(() => {
+      const c = document.getElementById("board");
+      const r = c.getBoundingClientRect();
+      const fire = (type, x, y) => {
+        c.dispatchEvent(
+          new PointerEvent(type, {
+            pointerId: 11,
+            pointerType: "mouse",
+            clientX: r.left + x,
+            clientY: r.top + y,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+      };
+      fire("pointerdown", 140, 80);
+      fire("pointermove", 180, 110);
+      fire("pointerup", 180, 110);
+      const item = window.__board.scene.items[0];
+      return { x: item.a.x, y: item.a.y, tool: window.__board.tool };
+    });
+    assert.equal(moved.tool, "select");
+    assert.ok(moved.x > 100, `expected rect to move right, got x=${moved.x}`);
+    assert.ok(moved.y > 90, `expected rect to move down, got y=${moved.y}`);
+  } finally {
+    await ctx.close();
+  }
+});
+
 test("freehand rectangle ink becomes a rect shape on release", async () => {
   const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
   try {

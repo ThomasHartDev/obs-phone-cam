@@ -31,8 +31,12 @@ import {
   rotateHandle,
   itemCenter,
   translateItem,
-  rotateItem,
   localBounds,
+  bringToFront,
+  sendToBack,
+  zoomAt,
+  resetView,
+  applyPinchView,
 } from "/board-transform.js";
 import { attachLogPanel, log, getLogs, refreshLogPanel } from "/board-log.js";
 
@@ -267,6 +271,34 @@ function bindToolbar() {
     afterEdit();
   };
   bindTap(document.getElementById("refreshBtn"), () => location.reload());
+  bindTap(document.getElementById("layerUpBtn"), () => {
+    if (!selected) return;
+    const i = scene.items.indexOf(selected);
+    if (i < 0 || i === scene.items.length - 1) return;
+    checkpoint(scene);
+    bringToFront(scene.items, selected);
+    afterEdit();
+  });
+  bindTap(document.getElementById("layerDownBtn"), () => {
+    if (!selected) return;
+    const i = scene.items.indexOf(selected);
+    if (i <= 0) return;
+    checkpoint(scene);
+    sendToBack(scene.items, selected);
+    afterEdit();
+  });
+  bindTap(document.getElementById("zoomOutBtn"), () => {
+    zoomAt(view, 1 / 1.25, view.w / 2, view.h / 2);
+    paint();
+  });
+  bindTap(document.getElementById("zoomInBtn"), () => {
+    zoomAt(view, 1.25, view.w / 2, view.h / 2);
+    paint();
+  });
+  bindTap(document.getElementById("zoomResetBtn"), () => {
+    resetView(view);
+    paint();
+  });
   bindTap(document.getElementById("libBtn"), () => {
     const el = document.getElementById("library");
     el.hidden = !el.hidden;
@@ -304,7 +336,7 @@ function syncEraseUi() {
     widthEl.value = String(width);
     const noun = document.getElementById("widthNoun");
     if (noun) noun.textContent = "Size";
-    canvas.style.cursor = "crosshair";
+    canvas.style.cursor = tool === "select" ? "grab" : "crosshair";
     hideEraseCursor();
   }
 }
@@ -756,18 +788,20 @@ function onDown(e) {
   if (tool === "text") {
     const text = window.prompt("Text");
     if (text) {
-      addText(scene, color, Math.max(18, width * 6), world.x, world.y, text);
+      selected = addText(scene, color, Math.max(18, width * 6), world.x, world.y, text);
       afterEdit();
     } else paint();
     return;
   }
   if (tool === "pen" || tool === "highlighter") {
+    selected = null;
     current = beginInk(scene, tool, color, width, world.x, world.y, pressure(e));
     current.pointerType = e.pointerType;
     current.pointerId = e.pointerId;
     paint();
     return;
   }
+  selected = null;
   current = beginShape(scene, tool, color, width, world.x, world.y);
   current.pointerType = e.pointerType;
   current.pointerId = e.pointerId;
@@ -791,13 +825,7 @@ function applyMove(e) {
   if (pinch && shouldStartPinch(pointers)) {
     const pts = [...pointers.values()].filter((p) => p.type === "touch");
     if (pts.length < 2) return;
-    const dist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
-    const scale = Math.max(0.4, Math.min(4, pinch.scale * (dist / (pinch.dist || 1))));
-    const cx = (pts[0].x + pts[1].x) / 2;
-    const cy = (pts[0].y + pts[1].y) / 2;
-    view.scale = scale;
-    view.panX = pinch.panX + (cx - pinch.cx);
-    view.panY = pinch.panY + (cy - pinch.cy);
+    applyPinchView(view, pinch, pts[0], pts[1]);
     paint();
     return;
   }
@@ -848,6 +876,9 @@ function onUp(e) {
     afterEdit();
   }
   current = null;
+  if (finished && (finished.kind === "shape" || finished.kind === "text")) {
+    selected = finished;
+  }
   if (finished && finished.kind === "ink" && finished.tool === "pen") {
     const item = finished;
     requestAnimationFrame(() => beautifyInk(item));
@@ -873,7 +904,7 @@ function startSelect(world, e) {
     paint();
     return;
   }
-  const hit = hitTop(scene.items, world.x, world.y);
+  const hit = hitTop(scene.items, world.x, world.y, 16 / view.scale);
   selected = hit;
   if (hit) {
     checkpoint(scene);
@@ -928,14 +959,17 @@ function beautifyInk(item) {
   checkpoint(scene);
   const idx = scene.items.indexOf(item);
   if (idx < 0) return false;
-  scene.items[idx] = {
+  const next = {
     kind: "shape",
     tool: rec.tool,
     color: item.color,
     width: item.width,
     a: rec.a,
     b: rec.b,
+    rot: item.rot || 0,
   };
+  scene.items[idx] = next;
+  selected = next;
   afterEdit();
   return true;
 }
@@ -1013,6 +1047,8 @@ Object.defineProperty(window, "__board", {
   get: () => ({
     scene,
     tool,
+    view,
+    selected,
     live,
     peerPresent,
     eraseMode,
