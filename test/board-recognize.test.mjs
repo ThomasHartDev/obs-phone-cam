@@ -60,6 +60,36 @@ test("closed oval becomes an ellipse, not a rect", () => {
   assert.equal(recognizeStroke(pts).tool, "ellipse");
 });
 
+test("wobbly long line snaps to a line", () => {
+  const pts = [];
+  for (let i = 0; i <= 30; i++) {
+    pts.push({ x: 20 + i * 6, y: 40 + Math.sin(i * 0.4) * 7 });
+  }
+  const rec = recognizeStroke(pts);
+  assert.equal(rec && rec.tool, "line");
+});
+
+test("noisy large circle snaps to an ellipse", () => {
+  const pts = [];
+  const n = 36;
+  for (let i = 0; i <= n; i++) {
+    const t = (i / n) * Math.PI * 2;
+    const j = (i % 4) - 1.5;
+    pts.push({ x: 120 + 70 * Math.cos(t) + j * 2, y: 110 + 70 * Math.sin(t) + j });
+  }
+  const rec = recognizeStroke(pts);
+  assert.equal(rec && rec.tool, "ellipse");
+});
+
+test("shaft plus hook snaps to an arrow", () => {
+  const pts = [
+    ...line(20, 90, 200, 90, 22),
+    ...line(200, 90, 160, 55, 10).slice(1),
+  ];
+  const rec = recognizeStroke(pts);
+  assert.equal(rec && rec.tool, "arrow");
+});
+
 test("small letter-sized loop is not a circle", () => {
   const pts = ellipsePath(20, 20, 14, 16);
   assert.equal(recognizeStroke(pts), null);
