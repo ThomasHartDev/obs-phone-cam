@@ -37,6 +37,20 @@ test("ink stroke records points and undo/redo restores it", () => {
   assert.equal(board.items[0].color, "#e24a3b");
 });
 
+test("pixel erase punches a rect instead of deleting it whole", () => {
+  const board = createBoard();
+  const shape = beginShape(board, "rect", "#000", 4, 0, 0);
+  setShapeEnd(shape, 120, 80);
+  checkpoint(board);
+  assert.equal(eraseAt(board, 60, 0, 10, "pixel"), true);
+  assert.equal(
+    board.items.some((it) => it.kind === "shape"),
+    false,
+  );
+  const pts = board.items.flatMap((it) => it.points || []);
+  assert.ok(pts.length > 8, "outline remnants should remain");
+});
+
 test("eraser removes a nearby stroke and leaves a distant one", () => {
   const board = createBoard();
   beginInk(board, "pen", "#000", 4, 10, 10, 1);

@@ -60,6 +60,22 @@ test("closed oval becomes an ellipse, not a rect", () => {
   assert.equal(recognizeStroke(pts).tool, "ellipse");
 });
 
+test("small letter-sized loop is not a circle", () => {
+  const pts = ellipsePath(20, 20, 14, 16);
+  assert.equal(recognizeStroke(pts), null);
+});
+
+test("orbit-like scribble stays ink", () => {
+  const pts = [];
+  for (let i = 0; i < 80; i++) {
+    pts.push({
+      x: 10 + i * 2.4,
+      y: 40 + Math.sin(i * 0.9) * 10 + Math.sin(i * 2.3) * 6,
+    });
+  }
+  assert.equal(recognizeStroke(pts), null);
+});
+
 test("scribble is not a shape", () => {
   const pts = [];
   for (let i = 0; i < 40; i++) {

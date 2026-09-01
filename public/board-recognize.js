@@ -42,7 +42,7 @@ export function lineScore(points) {
   const a = points[0];
   const b = points[points.length - 1];
   const len = Math.hypot(b.x - a.x, b.y - a.y);
-  if (len < 28) return 0;
+  if (len < LINE_MIN) return 0;
   const travel = pathLength(points);
   if (travel > len * 1.35) return 0;
   let maxd = 0;
@@ -82,10 +82,41 @@ export function arrowScore(points) {
   return clamp01(0.55 * shaftScore + 0.45);
 }
 
+export const CLOSED_SHAPE_MIN = 64;
+export const LINE_MIN = 72;
+
+function sharpTurns(points) {
+  let n = 0;
+  for (let i = 2; i < points.length; i++) {
+    const a = Math.atan2(
+      points[i - 1].y - points[i - 2].y,
+      points[i - 1].x - points[i - 2].x,
+    );
+    const b = Math.atan2(
+      points[i].y - points[i - 1].y,
+      points[i].x - points[i - 1].x,
+    );
+    let d = Math.abs(b - a);
+    if (d > Math.PI) d = 2 * Math.PI - d;
+    if (d > 0.7) n++;
+  }
+  return n;
+}
+
+export function isLikelyWriting(points) {
+  if (!points || points.length < 6) return false;
+  const b = bboxOf(points);
+  const turns = sharpTurns(points);
+  if (turns >= 8) return true;
+  if (b.h < 52 && b.w > b.h * 2.1 && turns >= 4) return true;
+  if (Math.min(b.w, b.h) < 36 && turns >= 3) return true;
+  return false;
+}
+
 export function rectScore(points) {
   if (!points || points.length < 12) return 0;
   const b = bboxOf(points);
-  if (b.w < 22 || b.h < 22) return 0;
+  if (b.w < CLOSED_SHAPE_MIN || b.h < CLOSED_SHAPE_MIN) return 0;
   const closed =
     Math.hypot(
       points[0].x - points[points.length - 1].x,
@@ -120,7 +151,7 @@ export function rectScore(points) {
 export function ellipseScore(points) {
   if (!points || points.length < 14) return 0;
   const b = bboxOf(points);
-  if (b.w < 22 || b.h < 22) return 0;
+  if (b.w < CLOSED_SHAPE_MIN || b.h < CLOSED_SHAPE_MIN) return 0;
   const closed =
     Math.hypot(
       points[0].x - points[points.length - 1].x,
@@ -144,7 +175,8 @@ export function ellipseScore(points) {
 }
 
 export function recognizeStroke(points) {
-  if (!points || points.length < 4) return null;
+  if (!points || points.length < 8) return null;
+  if (isLikelyWriting(points)) return null;
   const line = lineScore(points);
   const arrow = arrowScore(points);
   const rect = rectScore(points);
@@ -157,8 +189,8 @@ export function recognizeStroke(points) {
   ].sort((a, b) => b.score - a.score);
   const best = ranked[0];
   const second = ranked[1];
-  if (best.score < 0.78) return null;
-  if (second && best.score - second.score < 0.04 && best.score < 0.9) return null;
+  if (best.score < 0.86) return null;
+  if (second && best.score - second.score < 0.06 && best.score < 0.94) return null;
   const b = bboxOf(points);
   if (best.tool === "line" || best.tool === "arrow") {
     return {
@@ -180,7 +212,7 @@ export function recognizeStroke(points) {
 
 export function looksLikeHandwriting(points) {
   if (!points || points.length < 6) return false;
-  if (recognizeStroke(points)) return false;
+  if (isLikelyWriting(points)) return true;
   let turns = 0;
   for (let i = 2; i < points.length; i++) {
     const a = Math.atan2(

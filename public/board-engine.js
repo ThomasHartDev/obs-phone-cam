@@ -77,9 +77,78 @@ export function addText(board, color, size, x, y, text) {
   return item;
 }
 
-export function eraseAt(board, x, y, radius, mode = "element") {
-  if (mode === "pixel") return erasePixels(board, x, y, radius);
-  return eraseElements(board, x, y, radius);
+export function eraseAt(board, x, y, radius, mode = "pixel") {
+  if (mode === "element") return eraseElements(board, x, y, radius);
+  return erasePixels(board, x, y, radius);
+}
+
+function sampleSeg(a, b, step) {
+  const len = Math.hypot(b.x - a.x, b.y - a.y);
+  const n = Math.max(2, Math.ceil(len / step));
+  const pts = [];
+  for (let i = 0; i <= n; i++) {
+    const t = i / n;
+    pts.push({
+      x: a.x + (b.x - a.x) * t,
+      y: a.y + (b.y - a.y) * t,
+      p: 0.5,
+    });
+  }
+  return pts;
+}
+
+export function outlinePoints(item) {
+  if (item.kind === "ink") return item.points || [];
+  if (item.kind === "shape" && item.a && item.b) {
+    const step = 5;
+    if (item.tool === "line" || item.tool === "arrow") {
+      return sampleSeg(item.a, item.b, step);
+    }
+    const x0 = Math.min(item.a.x, item.b.x);
+    const y0 = Math.min(item.a.y, item.b.y);
+    const x1 = Math.max(item.a.x, item.b.x);
+    const y1 = Math.max(item.a.y, item.b.y);
+    if (item.tool === "ellipse") {
+      const cx = (x0 + x1) / 2;
+      const cy = (y0 + y1) / 2;
+      const rx = (x1 - x0) / 2 || 1;
+      const ry = (y1 - y0) / 2 || 1;
+      const n = Math.max(24, Math.ceil((Math.PI * 2 * Math.max(rx, ry)) / step));
+      const pts = [];
+      for (let i = 0; i <= n; i++) {
+        const t = (i / n) * Math.PI * 2;
+        pts.push({
+          x: cx + rx * Math.cos(t),
+          y: cy + ry * Math.sin(t),
+          p: 0.5,
+        });
+      }
+      return pts;
+    }
+    const tl = { x: x0, y: y0 };
+    const tr = { x: x1, y: y0 };
+    const br = { x: x1, y: y1 };
+    const bl = { x: x0, y: y1 };
+    return [
+      ...sampleSeg(tl, tr, step).slice(0, -1),
+      ...sampleSeg(tr, br, step).slice(0, -1),
+      ...sampleSeg(br, bl, step).slice(0, -1),
+      ...sampleSeg(bl, tl, step),
+    ];
+  }
+  if (item.kind === "text") {
+    const w = Math.max(12, String(item.text || "").length * item.size * 0.55);
+    const h = item.size * 1.2;
+    const pts = [];
+    const step = 5;
+    for (let x = item.x; x <= item.x + w; x += step) {
+      for (let y = item.y; y <= item.y + h; y += step) {
+        pts.push({ x, y, p: 0.5 });
+      }
+    }
+    return pts;
+  }
+  return [];
 }
 
 function eraseElements(board, x, y, radius) {
@@ -94,16 +163,27 @@ function eraseElements(board, x, y, radius) {
   return true;
 }
 
+function asInk(item) {
+  if (item.kind === "ink") return item;
+  return {
+    kind: "ink",
+    tool: "pen",
+    color: item.color || "#1a1d23",
+    width: item.width || 4,
+    points: outlinePoints(item),
+  };
+}
+
 function erasePixels(board, x, y, radius) {
   const next = [];
   let hit = false;
   for (const item of board.items) {
-    if (item.kind !== "ink") {
-      if (itemHits(item, x, y, radius)) hit = true;
-      else next.push(item);
+    const ink = asInk(item);
+    if (!ink.points.length) {
+      next.push(item);
       continue;
     }
-    const parts = splitInkOutside(item, x, y, radius);
+    const parts = splitInkOutside(ink, x, y, radius);
     if (parts == null) {
       next.push(item);
       continue;
