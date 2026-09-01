@@ -8,6 +8,8 @@ import {
   looksLikeHandwriting,
   snapTextBox,
   clusterInk,
+  fitCircleKasa,
+  circleScore,
 } from "../public/board-recognize.js";
 
 function line(x0, y0, x1, y1, n = 20) {
@@ -67,6 +69,75 @@ test("wobbly long line snaps to a line", () => {
   }
   const rec = recognizeStroke(pts);
   assert.equal(rec && rec.tool, "line");
+});
+
+test("Kasa fit recovers center and radius of a circle", () => {
+  const pts = ellipsePath(150, 140, 80, 80, 40);
+  const fit = fitCircleKasa(pts);
+  assert.ok(fit);
+  assert.ok(Math.abs(fit.cx - 150) < 2);
+  assert.ok(Math.abs(fit.r - 80) < 2);
+  assert.ok(circleScore(pts).score > 0.55);
+});
+
+test("messy almost-open freehand circle snaps to a circle", () => {
+  const pts = [];
+  for (let i = 0; i <= 48; i++) {
+    const t = (i / 48) * Math.PI * 2 * 0.9;
+    const j = ((i * 13) % 9) - 4;
+    pts.push({
+      x: 220 + 95 * Math.cos(t) + j,
+      y: 190 + 92 * Math.sin(t) + j * 0.4,
+    });
+  }
+  const rec = recognizeStroke(pts);
+  assert.equal(rec && rec.tool, "ellipse");
+  const w = rec.b.x - rec.a.x;
+  const h = rec.b.y - rec.a.y;
+  assert.ok(Math.abs(w - h) / Math.max(w, h) < 0.15);
+});
+
+test("quarter arc does not become a circle", () => {
+  const pts = [];
+  for (let i = 0; i <= 24; i++) {
+    const t = (i / 24) * (Math.PI / 2);
+    pts.push({ x: 80 + 90 * Math.cos(t), y: 80 + 90 * Math.sin(t) });
+  }
+  assert.equal(recognizeStroke(pts), null);
+});
+
+test("wrist-drawn oval with a gap still snaps", () => {
+  const pts = [];
+  for (let i = 0; i <= 56; i++) {
+    const t = (i / 56) * Math.PI * 2 * 0.88;
+    const j = ((i * 17) % 11) - 5;
+    pts.push({
+      x: 180 + 110 * Math.cos(t) + j * 1.2,
+      y: 160 + 78 * Math.sin(t) + j * 0.6,
+    });
+  }
+  const rec = recognizeStroke(pts);
+  assert.equal(rec && rec.tool, "ellipse");
+  const w = rec.b.x - rec.a.x;
+  const h = rec.b.y - rec.a.y;
+  assert.ok(w > 140 && h > 90);
+});
+
+test("overlapping start of a dense Pencil-like circle snaps", () => {
+  const pts = [];
+  for (let i = 0; i <= 180; i++) {
+    const t = (i / 160) * Math.PI * 2;
+    const j = Math.sin(i * 0.7) * 4;
+    pts.push({
+      x: 240 + 88 * Math.cos(t) + j,
+      y: 210 + 84 * Math.sin(t) + j * 0.5,
+    });
+  }
+  const rec = recognizeStroke(pts);
+  assert.equal(rec && rec.tool, "ellipse");
+  const w = rec.b.x - rec.a.x;
+  const h = rec.b.y - rec.a.y;
+  assert.ok(Math.abs(w - h) / Math.max(w, h) < 0.18);
 });
 
 test("noisy large circle snaps to an ellipse", () => {

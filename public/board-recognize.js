@@ -28,6 +28,180 @@ export function pathLength(points) {
   return n;
 }
 
+export function resample(points, n) {
+  const len = pathLength(points);
+  if (!points || points.length < 2 || len < 1) return (points || []).slice();
+  const I = len / (n - 1);
+  const out = [{ x: points[0].x, y: points[0].y }];
+  let d = 0;
+  let i = 1;
+  let prev = points[0];
+  while (out.length < n && i < points.length) {
+    const cur = points[i];
+    const step = Math.hypot(cur.x - prev.x, cur.y - prev.y);
+    if (d + step >= I) {
+      const t = (I - d) / (step || 1);
+      const nx = prev.x + t * (cur.x - prev.x);
+      const ny = prev.y + t * (cur.y - prev.y);
+      out.push({ x: nx, y: ny });
+      prev = { x: nx, y: ny };
+      d = 0;
+    } else {
+      d += step;
+      prev = cur;
+      i++;
+    }
+  }
+  while (out.length < n) {
+    const last = points[points.length - 1];
+    out.push({ x: last.x, y: last.y });
+  }
+  return out;
+}
+
+export function shoelaceArea(points) {
+  if (!points || points.length < 3) return 0;
+  let a = 0;
+  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+    a += points[j].x * points[i].y - points[i].x * points[j].y;
+  }
+  return Math.abs(a) / 2;
+}
+
+function solve3(A, b) {
+  const m = [
+    [A[0][0], A[0][1], A[0][2], b[0]],
+    [A[1][0], A[1][1], A[1][2], b[1]],
+    [A[2][0], A[2][1], A[2][2], b[2]],
+  ];
+  for (let col = 0; col < 3; col++) {
+    let piv = col;
+    for (let r = col + 1; r < 3; r++) {
+      if (Math.abs(m[r][col]) > Math.abs(m[piv][col])) piv = r;
+    }
+    if (Math.abs(m[piv][col]) < 1e-12) return null;
+    const tmp = m[col];
+    m[col] = m[piv];
+    m[piv] = tmp;
+    const div = m[col][col];
+    for (let c = col; c < 4; c++) m[col][c] /= div;
+    for (let r = 0; r < 3; r++) {
+      if (r === col) continue;
+      const f = m[r][col];
+      for (let c = col; c < 4; c++) m[r][c] -= f * m[col][c];
+    }
+  }
+  return [m[0][3], m[1][3], m[2][3]];
+}
+
+export function fitCircleKasa(points) {
+  let sxx = 0,
+    syy = 0,
+    sxy = 0,
+    sx = 0,
+    sy = 0;
+  let sxz = 0,
+    syz = 0,
+    sz = 0;
+  const n = points.length;
+  for (const p of points) {
+    const z = p.x * p.x + p.y * p.y;
+    sx += p.x;
+    sy += p.y;
+    sxx += p.x * p.x;
+    syy += p.y * p.y;
+    sxy += p.x * p.y;
+    sxz += p.x * z;
+    syz += p.y * z;
+    sz += z;
+  }
+  const sol = solve3(
+    [
+      [sxx, sxy, sx],
+      [sxy, syy, sy],
+      [sx, sy, n],
+    ],
+    [sxz, syz, sz],
+  );
+  if (!sol) return null;
+  const cx = sol[0] / 2;
+  const cy = sol[1] / 2;
+  const r2 = sol[2] + cx * cx + cy * cy;
+  if (!(r2 > 4)) return null;
+  const r = Math.sqrt(r2);
+  let err = 0;
+  for (const p of points) err += Math.abs(Math.hypot(p.x - cx, p.y - cy) - r);
+  return { cx, cy, r, rms: err / n };
+}
+
+export function ellipseAxes(points, cx, cy) {
+  let xx = 0;
+  let yy = 0;
+  const n = points.length || 1;
+  for (const p of points) {
+    const dx = p.x - cx;
+    const dy = p.y - cy;
+    xx += dx * dx;
+    yy += dy * dy;
+  }
+  return {
+    rx: Math.sqrt(Math.max(1, (2 * xx) / n)),
+    ry: Math.sqrt(Math.max(1, (2 * yy) / n)),
+  };
+}
+
+function ellipseResidual(points, cx, cy, rx, ry) {
+  const n = points.length || 1;
+  let err = 0;
+  for (const p of points) {
+    err += Math.abs(Math.hypot((p.x - cx) / (rx || 1), (p.y - cy) / (ry || 1)) - 1);
+  }
+  return err / n;
+}
+
+export function angularCoverage(points, cx, cy) {
+  const angs = points.map((p) => Math.atan2(p.y - cy, p.x - cx)).sort((a, b) => a - b);
+  if (angs.length < 4) return 0;
+  let maxGap = 0;
+  for (let i = 1; i < angs.length; i++) maxGap = Math.max(maxGap, angs[i] - angs[i - 1]);
+  maxGap = Math.max(maxGap, angs[0] + Math.PI * 2 - angs[angs.length - 1]);
+  return Math.max(0, Math.PI * 2 - maxGap);
+}
+
+export function circleScore(points) {
+  if (!points || points.length < 10) return { score: 0, fit: null };
+  const b = bboxOf(points);
+  if (Math.min(b.w, b.h) < 36) return { score: 0, fit: null };
+  const kasa = fitCircleKasa(points);
+  if (!kasa || kasa.r < 24) return { score: 0, fit: null };
+  const { rx, ry } = ellipseAxes(points, kasa.cx, kasa.cy);
+  if (Math.min(rx, ry) < 24) return { score: 0, fit: null };
+  if (Math.max(rx, ry) / Math.min(rx, ry) > 2.2) return { score: 0, fit: null };
+  const rel = ellipseResidual(points, kasa.cx, kasa.cy, rx, ry);
+  const cover = angularCoverage(points, kasa.cx, kasa.cy);
+  const peri = pathLength(points);
+  const gap = Math.hypot(
+    points[0].x - points[points.length - 1].x,
+    points[0].y - points[points.length - 1].y,
+  );
+  const closedPeri = peri + gap;
+  const area = shoelaceArea(points.concat([points[0]]));
+  const circ = closedPeri > 1 ? (4 * Math.PI * area) / (closedPeri * closedPeri) : 0;
+  if (cover < 4.0) return { score: 0, fit: null };
+  if (rel > 0.22) return { score: 0, fit: null };
+  if (circ < 0.55) return { score: 0, fit: null };
+  if (rel > 0.045 && rectScore(points) >= 0.8) return { score: 0, fit: null };
+  const quality = clamp01(
+    (1 - rel / 0.22) * 0.5 +
+      clamp01((circ - 0.55) / 0.4) * 0.25 +
+      clamp01((cover - 4.0) / 2.2) * 0.25,
+  );
+  return {
+    score: 0.56 + 0.44 * quality,
+    fit: { cx: kasa.cx, cy: kasa.cy, r: kasa.r, rx, ry, rms: rel },
+  };
+}
+
 function distToSeg(p, a, b) {
   const vx = b.x - a.x;
   const vy = b.y - a.y;
@@ -106,7 +280,8 @@ export function arrowScore(points) {
     const d = distToSeg(p, a, b);
     if (d > maxOff) maxOff = d;
   }
-  if (maxTurn < 0.45 && maxOff < Math.max(12, shaftLen * 0.08)) return 0;
+  if (maxTurn < 0.55) return 0;
+  if (maxOff < Math.max(12, shaftLen * 0.08)) return 0;
   return clamp01(0.5 * shaftScore + 0.5);
 }
 
@@ -207,7 +382,21 @@ export function ellipseScore(points) {
 
 export function recognizeStroke(raw) {
   if (!raw || raw.length < 6) return null;
-  const points = smoothPoints(raw);
+  const points = resample(smoothPoints(raw), 64);
+  const cir = circleScore(points);
+  if (cir.score >= 0.52 && cir.fit) {
+    const { cx, cy, rx, ry } = cir.fit;
+    const round = Math.max(rx, ry) / Math.min(rx, ry) < 1.14;
+    const ax = round ? (rx + ry) / 2 : rx;
+    const ay = round ? ax : ry;
+    return {
+      kind: "shape",
+      tool: "ellipse",
+      a: { x: cx - ax, y: cy - ay },
+      b: { x: cx + ax, y: cy + ay },
+      score: cir.score,
+    };
+  }
   if (isLikelyWriting(points)) return null;
   const line = lineScore(points);
   const arrow = arrowScore(points);
