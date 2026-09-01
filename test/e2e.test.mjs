@@ -837,15 +837,7 @@ test("board drag produces a stroke with many points, not a single dot", async ()
     assert.equal(chrome.refresh, "Refresh");
     assert.equal(chrome.penIcon, true);
     const beforeTabs = await board.evaluate(() => window.__board.openIds.length);
-    await board.evaluate(() => {
-      const b = document.getElementById("tabNew");
-      b.dispatchEvent(
-        new PointerEvent("pointerdown", { bubbles: true, pointerId: 21 }),
-      );
-      b.dispatchEvent(
-        new PointerEvent("pointerup", { bubbles: true, pointerId: 21 }),
-      );
-    });
+    await board.click("#tabNew");
     await board.waitForFunction(
       (n) => window.__board.openIds.length > n,
       beforeTabs,
