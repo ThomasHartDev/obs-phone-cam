@@ -830,6 +830,27 @@ test("board drag produces a stroke with many points, not a single dot", async ()
       null,
       { timeout: 15000 },
     );
+    const chrome = await board.evaluate(() => ({
+      refresh: document.getElementById("refreshBtn")?.getAttribute("aria-label"),
+      penIcon: !!document.querySelector('[data-tool="pen"] svg'),
+    }));
+    assert.equal(chrome.refresh, "Refresh");
+    assert.equal(chrome.penIcon, true);
+    const beforeTabs = await board.evaluate(() => window.__board.openIds.length);
+    await board.evaluate(() => {
+      const b = document.getElementById("tabNew");
+      b.dispatchEvent(
+        new PointerEvent("pointerdown", { bubbles: true, pointerId: 21 }),
+      );
+      b.dispatchEvent(
+        new PointerEvent("pointerup", { bubbles: true, pointerId: 21 }),
+      );
+    });
+    await board.waitForFunction(
+      (n) => window.__board.openIds.length > n,
+      beforeTabs,
+      { timeout: 8000 },
+    );
     const n = await board.evaluate(() => {
       const c = document.getElementById("board");
       const r = c.getBoundingClientRect();

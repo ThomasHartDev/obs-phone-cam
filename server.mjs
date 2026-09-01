@@ -167,7 +167,20 @@ async function handleBoardLogs(url, req, res) {
 async function handleDrawings(url, req, res) {
   const pathname = url.pathname;
   if (pathname === "/drawings" && req.method === "GET") {
-    json(res, 200, { drawings: await drawings.list() });
+    const trash = url.searchParams.get("trash") === "1";
+    json(res, 200, { drawings: await drawings.list({ trash }) });
+    return true;
+  }
+  const restore = pathname.match(/^\/drawings\/([^/]+)\/restore$/);
+  if (restore && req.method === "POST") {
+    const id = decodeURIComponent(restore[1]);
+    if (!isDocId(id)) {
+      json(res, 400, { error: "bad id" });
+      return true;
+    }
+    const doc = await drawings.restore(id);
+    if (!doc) json(res, 404, { error: "not found" });
+    else json(res, 200, { drawing: doc });
     return true;
   }
   const m = pathname.match(/^\/drawings\/([^/]+)$/);
@@ -205,7 +218,8 @@ async function handleDrawings(url, req, res) {
     return true;
   }
   if (req.method === "DELETE") {
-    const ok = await drawings.remove(id);
+    const hard = url.searchParams.get("hard") === "1";
+    const ok = hard ? await drawings.purgeNow(id) : await drawings.remove(id);
     json(res, ok ? 200 : 404, { ok });
     return true;
   }
