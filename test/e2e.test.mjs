@@ -836,6 +836,10 @@ test("board drag produces a stroke with many points, not a single dot", async ()
     }));
     assert.equal(chrome.refresh, "Refresh");
     assert.equal(chrome.penIcon, true);
+    assert.equal(
+      await board.evaluate(() => !!document.querySelector('[data-tool="select"]')),
+      true,
+    );
     const beforeTabs = await board.evaluate(() => window.__board.openIds.length);
     await board.click("#tabNew");
     await board.waitForFunction(

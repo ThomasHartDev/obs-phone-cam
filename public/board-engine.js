@@ -1,5 +1,7 @@
 /** Vector whiteboard scene. No DOM. Used by the iPad page and unit tests. */
 
+import { itemCenter, worldToLocal } from "./board-transform.js";
+
 export const PAPERS = {
   white: { fill: "#f7f4ee", grid: false, chroma: false },
   grid: { fill: "#f7f4ee", grid: true, chroma: false },
@@ -178,12 +180,13 @@ function erasePixels(board, x, y, radius) {
   const next = [];
   let hit = false;
   for (const item of board.items) {
+    const local = worldToLocal(item, x, y);
     const ink = asInk(item);
     if (!ink.points.length) {
       next.push(item);
       continue;
     }
-    const parts = splitInkOutside(ink, x, y, radius);
+    const parts = splitInkOutside(ink, local.x, local.y, radius);
     if (parts == null) {
       next.push(item);
       continue;
@@ -282,7 +285,20 @@ export function renderBoard(ctx, board, view) {
   ctx.save();
   ctx.translate(view.panX, view.panY);
   ctx.scale(view.scale, view.scale);
-  for (const item of board.items) drawItem(ctx, item);
+  for (const item of board.items) {
+    const rot = item.rot || 0;
+    if (!rot) {
+      drawItem(ctx, item);
+      continue;
+    }
+    const c = itemCenter(item);
+    ctx.save();
+    ctx.translate(c.x, c.y);
+    ctx.rotate(rot);
+    ctx.translate(-c.x, -c.y);
+    drawItem(ctx, item);
+    ctx.restore();
+  }
   ctx.restore();
 }
 
