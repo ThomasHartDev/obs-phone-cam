@@ -30,8 +30,8 @@ export function checkpoint(board) {
   if (board.history.length > HISTORY_CAP) board.history.shift();
 }
 
-export function beginInk(board, tool, color, width, x, y, p) {
-  checkpoint(board);
+export function beginInk(board, tool, color, width, x, y, p, snapshot = true) {
+  if (snapshot) checkpoint(board);
   const item = {
     kind: "ink",
     tool,
@@ -52,8 +52,8 @@ export function addPoint(item, x, y, p) {
   return true;
 }
 
-export function beginShape(board, tool, color, width, x, y) {
-  checkpoint(board);
+export function beginShape(board, tool, color, width, x, y, snapshot = true) {
+  if (snapshot) checkpoint(board);
   const item = {
     kind: "shape",
     tool,
@@ -64,6 +64,13 @@ export function beginShape(board, tool, color, width, x, y) {
   };
   board.items.push(item);
   return item;
+}
+
+export function snapshotExcluding(board, live) {
+  const prev = live ? board.items.filter((it) => it !== live) : board.items;
+  board.history.push(cloneItems(prev));
+  board.future.length = 0;
+  if (board.history.length > HISTORY_CAP) board.history.shift();
 }
 
 export function setShapeEnd(item, x, y) {
