@@ -833,9 +833,15 @@ test("board drag produces a stroke with many points, not a single dot", async ()
     const chrome = await board.evaluate(() => ({
       refresh: document.getElementById("refreshBtn")?.getAttribute("aria-label"),
       penIcon: !!document.querySelector('[data-tool="pen"] svg'),
+      penInDock: !!document.querySelector(".board-draw-dock [data-tool=pen]"),
+      undoInHud: !!document.querySelector(".board-hud #undoBtn"),
+      zoomInHud: !!document.querySelector(".board-hud #zoomInBtn"),
     }));
     assert.equal(chrome.refresh, "Refresh");
     assert.equal(chrome.penIcon, true);
+    assert.equal(chrome.penInDock, true);
+    assert.equal(chrome.undoInHud, true);
+    assert.equal(chrome.zoomInHud, true);
     assert.equal(
       await board.evaluate(() => !!document.querySelector('[data-tool="select"]')),
       true,

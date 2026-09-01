@@ -1,6 +1,6 @@
 {
   "name": "obs-phone-cam",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "private": true,
   "type": "module",
   "description": "iPhone camera and iPad whiteboard as low-latency OBS sources over your local network. No app install, no per-month fee.",

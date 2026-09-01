@@ -12,6 +12,7 @@ import {
   clearBoard,
   setPaper,
   checkpoint,
+  snapshotExcluding,
   renderBoard,
 } from "/board-engine.js";
 import {
@@ -39,6 +40,7 @@ import {
   applyPinchView,
 } from "/board-transform.js";
 import { attachLogPanel, log, getLogs, refreshLogPanel } from "/board-log.js";
+import { enqueue } from "/board-jobs.js";
 
 const canvas = document.getElementById("board");
 const ctx = canvas.getContext("2d", { alpha: false });
@@ -73,6 +75,7 @@ let dirty = false;
 let saveTimer = 0;
 let frameDirty = true;
 let saving = false;
+let textAt = null;
 
 const setStatus = (t, cls = "") => {
   statusEl.textContent = t;
@@ -211,6 +214,7 @@ function bindToolbar() {
     const btn = document.querySelector(`[data-tool="${name}"]`);
     if (!btn) continue;
     bindTap(btn, () => {
+      if (name !== "text") commitTextPad();
       tool = name;
       if (name !== "select") selected = null;
       canvas.style.cursor = name === "select" ? "grab" : "crosshair";
@@ -315,7 +319,61 @@ function bindToolbar() {
     shareBtn.hidden = false;
     bindTap(shareBtn, () => toggleShare());
   }
+  const dock = document.querySelector(".board-draw-dock");
+  if (dock) dock.addEventListener("pointerdown", (e) => e.stopPropagation());
+  bindTextPad();
   syncEraseUi();
+}
+
+function bindTextPad() {
+  const pad = document.getElementById("textPad");
+  const input = document.getElementById("textInput");
+  if (!pad || !input) return;
+  pad.addEventListener("pointerdown", (e) => e.stopPropagation());
+  pad.addEventListener("submit", (e) => {
+    e.preventDefault();
+    commitTextPad();
+  });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeTextPad();
+    }
+  });
+}
+
+function openTextPad(screen, world) {
+  const pad = document.getElementById("textPad");
+  const input = document.getElementById("textInput");
+  if (!pad || !input) return;
+  commitTextPad();
+  textAt = world;
+  pad.hidden = false;
+  pad.style.left = screen.x + "px";
+  pad.style.top = screen.y + "px";
+  input.value = "";
+  input.focus();
+}
+
+function closeTextPad() {
+  const pad = document.getElementById("textPad");
+  const input = document.getElementById("textInput");
+  if (pad) pad.hidden = true;
+  if (input) input.blur();
+  textAt = null;
+}
+
+function commitTextPad() {
+  const pad = document.getElementById("textPad");
+  const input = document.getElementById("textInput");
+  if (!pad || pad.hidden || !textAt) return;
+  const text = input ? input.value : "";
+  const at = textAt;
+  closeTextPad();
+  if (!String(text).trim()) return;
+  selected = addText(scene, color, Math.max(18, width * 6), at.x, at.y, text);
+  paint();
+  enqueue(() => scheduleSave());
 }
 
 function syncEraseUi() {
@@ -577,7 +635,26 @@ function renderLibrary() {
     rename.type = "button";
     rename.className = "lib-rename";
     rename.textContent = "Rename";
-    rename.onclick = () => renameDoc(meta.id);
+    rename.onclick = () => {
+      const input = document.createElement("input");
+      input.type = "text";
+      input.value = meta.title || "Untitled";
+      input.setAttribute("aria-label", "Rename drawing");
+      open.replaceWith(input);
+      input.focus();
+      input.select();
+      const done = () => {
+        input.onblur = null;
+        applyRename(meta.id, input.value);
+      };
+      input.onblur = done;
+      input.onkeydown = (ev) => {
+        if (ev.key === "Enter") {
+          ev.preventDefault();
+          input.blur();
+        }
+      };
+    };
     const del = document.createElement("button");
     del.type = "button";
     del.className = "lib-del";
@@ -626,21 +703,20 @@ async function loadTrash() {
   }
 }
 
-async function renameDoc(id) {
-  const meta = catalog.find((d) => d.id === id);
-  const next = window.prompt("Rename drawing", meta?.title || "Untitled");
-  if (next == null) return;
-  const title = next.trim();
-  if (!title) return;
+async function applyRename(id, title) {
+  const name = String(title || "").trim();
+  if (!name) return;
   if (active && active.id === id) {
-    active.title = title;
+    active.title = name;
     dirty = true;
-    await flushSave();
+    enqueue(() => {
+      flushSave().catch(() => {});
+    });
   } else {
     const r = await fetch("/drawings/" + encodeURIComponent(id));
     if (!r.ok) return;
     const { drawing } = await r.json();
-    drawing.title = title;
+    drawing.title = name;
     const saved = await putDrawing(drawing);
     upsertCatalog(metaOf(saved));
   }
@@ -786,25 +862,26 @@ function onDown(e) {
     return;
   }
   if (tool === "text") {
-    const text = window.prompt("Text");
-    if (text) {
-      selected = addText(scene, color, Math.max(18, width * 6), world.x, world.y, text);
-      afterEdit();
-    } else paint();
+    openTextPad(pos, world);
     return;
   }
+  commitTextPad();
   if (tool === "pen" || tool === "highlighter") {
     selected = null;
-    current = beginInk(scene, tool, color, width, world.x, world.y, pressure(e));
+    current = beginInk(scene, tool, color, width, world.x, world.y, pressure(e), false);
     current.pointerType = e.pointerType;
     current.pointerId = e.pointerId;
+    const live = current;
+    enqueue(() => snapshotExcluding(scene, live));
     paint();
     return;
   }
   selected = null;
-  current = beginShape(scene, tool, color, width, world.x, world.y);
+  current = beginShape(scene, tool, color, width, world.x, world.y, false);
   current.pointerType = e.pointerType;
   current.pointerId = e.pointerId;
+  const live = current;
+  enqueue(() => snapshotExcluding(scene, live));
   paint();
 }
 
@@ -861,28 +938,30 @@ function applyMove(e) {
 }
 
 function onUp(e) {
-  if (e.target && e.target.closest && e.target.closest(".board-hud, .library, .board-log")) {
-    pointers.delete(e.pointerId);
-    return;
-  }
   pointers.delete(e.pointerId);
   if (!shouldStartPinch(pointers)) pinch = null;
   const penStillDown = [...pointers.values()].some((p) => p.type === "pen");
   if (penStillDown && current) return;
   const finished = current;
-  if (current && current.kind === "erase" && !current.dirty) {
-    if (scene.history.length) scene.history.pop();
-  } else if (current) {
-    afterEdit();
-  }
   current = null;
-  if (finished && (finished.kind === "shape" || finished.kind === "text")) {
-    selected = finished;
+  if (!finished) return;
+  if (finished.kind === "shape" || finished.kind === "text") selected = finished;
+  paint();
+  log("info", "stroke_up", {
+    kind: finished.kind,
+    tool: finished.tool || "",
+    points: finished.points ? finished.points.length : 0,
+  });
+  enqueue(() => commitFinished(finished));
+}
+
+function commitFinished(finished) {
+  if (finished.kind === "erase" && !finished.dirty) {
+    if (scene.history.length) scene.history.pop();
+    return;
   }
-  if (finished && finished.kind === "ink" && finished.tool === "pen") {
-    const item = finished;
-    requestAnimationFrame(() => beautifyInk(item));
-  }
+  scheduleSave();
+  if (finished.kind === "ink" && finished.tool === "pen") beautifyInk(finished);
 }
 
 function startSelect(world, e) {
