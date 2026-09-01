@@ -37,6 +37,22 @@ function distToSeg(p, a, b) {
   return Math.hypot(p.x - (a.x + t * vx), p.y - (a.y + t * vy));
 }
 
+function smoothPoints(points) {
+  if (!points || points.length < 5) return points;
+  const out = [points[0]];
+  for (let i = 1; i < points.length - 1; i++) {
+    out.push({
+      x: (points[i - 1].x + points[i].x + points[i + 1].x) / 3,
+      y: (points[i - 1].y + points[i].y + points[i + 1].y) / 3,
+    });
+  }
+  out.push(points[points.length - 1]);
+  return out;
+}
+
+export const CLOSED_SHAPE_MIN = 56;
+export const LINE_MIN = 56;
+
 export function lineScore(points) {
   if (!points || points.length < 4) return 0;
   const a = points[0];
@@ -44,7 +60,7 @@ export function lineScore(points) {
   const len = Math.hypot(b.x - a.x, b.y - a.y);
   if (len < LINE_MIN) return 0;
   const travel = pathLength(points);
-  if (travel > len * 1.35) return 0;
+  if (travel > len * 1.75) return 0;
   let maxd = 0;
   let sum = 0;
   for (const p of points) {
@@ -53,37 +69,46 @@ export function lineScore(points) {
     sum += d;
   }
   const mean = sum / points.length;
-  const s = 1 - Math.max(maxd / (len * 0.14 + 8), mean / (len * 0.05 + 4));
+  const s = 1 - Math.max(maxd / (len * 0.28 + 18), mean / (len * 0.14 + 10));
   return clamp01(s);
 }
 
 export function arrowScore(points) {
-  if (!points || points.length < 8) return 0;
-  const cut = Math.max(4, Math.floor(points.length * 0.72));
+  if (!points || points.length < 10) return 0;
+  const cut = Math.max(5, Math.floor(points.length * 0.68));
   const shaft = points.slice(0, cut);
   const head = points.slice(cut);
-  const shaftScore = lineScore(shaft);
-  if (shaftScore < 0.7) return 0;
   const a = shaft[0];
   const b = shaft[shaft.length - 1];
-  const ang = Math.atan2(b.y - a.y, b.x - a.x);
-  const nx = -Math.sin(ang);
-  const ny = Math.cos(ang);
-  let pos = 0;
-  let neg = 0;
-  let maxAbs = 0;
-  for (const p of head) {
-    const side = (p.x - b.x) * nx + (p.y - b.y) * ny;
-    if (side > 2) pos++;
-    if (side < -2) neg++;
-    maxAbs = Math.max(maxAbs, Math.abs(side));
+  const shaftLen = Math.hypot(b.x - a.x, b.y - a.y);
+  if (shaftLen < LINE_MIN) return 0;
+  const shaftScore = lineScore(shaft);
+  if (shaftScore < 0.55) return 0;
+  const whole = lineScore(points);
+  if (whole > 0.88) return 0;
+  if (shaftScore - whole < 0.08) return 0;
+  let maxTurn = 0;
+  for (let i = 2; i < points.length; i++) {
+    const a1 = Math.atan2(
+      points[i - 1].y - points[i - 2].y,
+      points[i - 1].x - points[i - 2].x,
+    );
+    const a2 = Math.atan2(
+      points[i].y - points[i - 1].y,
+      points[i].x - points[i - 1].x,
+    );
+    let d = Math.abs(a2 - a1);
+    if (d > Math.PI) d = 2 * Math.PI - d;
+    if (i >= cut - 1 && d > maxTurn) maxTurn = d;
   }
-  if (pos < 1 || neg < 1 || maxAbs < 6) return 0;
-  return clamp01(0.55 * shaftScore + 0.45);
+  let maxOff = 0;
+  for (const p of head) {
+    const d = distToSeg(p, a, b);
+    if (d > maxOff) maxOff = d;
+  }
+  if (maxTurn < 0.45 && maxOff < Math.max(12, shaftLen * 0.08)) return 0;
+  return clamp01(0.5 * shaftScore + 0.5);
 }
-
-export const CLOSED_SHAPE_MIN = 64;
-export const LINE_MIN = 72;
 
 function sharpTurns(points) {
   let n = 0;
@@ -106,10 +131,16 @@ function sharpTurns(points) {
 export function isLikelyWriting(points) {
   if (!points || points.length < 6) return false;
   const b = bboxOf(points);
+  const closed =
+    Math.hypot(
+      points[0].x - points[points.length - 1].x,
+      points[0].y - points[points.length - 1].y,
+    ) < 0.5 * Math.min(b.w, b.h);
+  if (closed && Math.min(b.w, b.h) >= CLOSED_SHAPE_MIN) return false;
   const turns = sharpTurns(points);
-  if (turns >= 8) return true;
-  if (b.h < 52 && b.w > b.h * 2.1 && turns >= 4) return true;
-  if (Math.min(b.w, b.h) < 36 && turns >= 3) return true;
+  if (turns >= 10 && Math.min(b.w, b.h) < CLOSED_SHAPE_MIN) return true;
+  if (b.h < 48 && b.w > b.h * 2.2 && turns >= 5) return true;
+  if (Math.min(b.w, b.h) < 32 && turns >= 4) return true;
   return false;
 }
 
@@ -156,7 +187,7 @@ export function ellipseScore(points) {
     Math.hypot(
       points[0].x - points[points.length - 1].x,
       points[0].y - points[points.length - 1].y,
-    ) < 0.32 * Math.min(b.w, b.h);
+    ) < 0.55 * Math.min(b.w, b.h);
   if (!closed) return 0;
   const cx = (b.minX + b.maxX) / 2;
   const cy = (b.minY + b.maxY) / 2;
@@ -167,15 +198,16 @@ export function ellipseScore(points) {
     err += Math.abs(Math.hypot((p.x - cx) / rx, (p.y - cy) / ry) - 1);
   }
   err /= points.length;
-  const s = 1 - err / 0.32;
-  if (s < 0.7) return 0;
+  const s = 1 - err / 0.42;
+  if (s < 0.62) return 0;
   const r = rectScore(points);
-  if (r > s + 0.04) return 0;
+  if (r > s + 0.08) return 0;
   return clamp01(s);
 }
 
-export function recognizeStroke(points) {
-  if (!points || points.length < 8) return null;
+export function recognizeStroke(raw) {
+  if (!raw || raw.length < 6) return null;
+  const points = smoothPoints(raw);
   if (isLikelyWriting(points)) return null;
   const line = lineScore(points);
   const arrow = arrowScore(points);
@@ -189,8 +221,9 @@ export function recognizeStroke(points) {
   ].sort((a, b) => b.score - a.score);
   const best = ranked[0];
   const second = ranked[1];
-  if (best.score < 0.86) return null;
-  if (second && best.score - second.score < 0.06 && best.score < 0.94) return null;
+  const need = best.tool === "rect" ? 0.8 : 0.72;
+  if (best.score < need) return null;
+  if (second && best.score - second.score < 0.03 && best.score < 0.88) return null;
   const b = bboxOf(points);
   if (best.tool === "line" || best.tool === "arrow") {
     return {
