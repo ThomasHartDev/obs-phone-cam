@@ -26,6 +26,14 @@ import {
   dropTouches,
 } from "/board-pointers.js";
 import { recognizeStroke } from "/board-recognize.js";
+import {
+  hitTop,
+  rotateHandle,
+  itemCenter,
+  translateItem,
+  rotateItem,
+  localBounds,
+} from "/board-transform.js";
 import { attachLogPanel, log, getLogs, refreshLogPanel } from "/board-log.js";
 
 const canvas = document.getElementById("board");
@@ -33,7 +41,7 @@ const ctx = canvas.getContext("2d", { alpha: false });
 const statusEl = document.getElementById("status");
 const shareBtn = document.getElementById("shareBtn");
 
-const TOOLS = ["pen", "highlighter", "eraser", "line", "rect", "ellipse", "arrow", "text"];
+const TOOLS = ["select", "pen", "highlighter", "eraser", "line", "rect", "ellipse", "arrow", "text"];
 const COLORS = ["#1a1d23", "#e24a3b", "#2f6fed", "#1f9d55", "#f0a202", "#ffffff"];
 
 const scene = createBoard();
@@ -49,6 +57,7 @@ let pc = null;
 let outStream = null;
 let sharing = false;
 let current = null;
+let selected = null;
 let pointers = new Map();
 let pinch = null;
 const OPEN_KEY = "obscam.board.openTabs";
@@ -94,6 +103,7 @@ function drawIfDirty() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   renderBoard(ctx, scene, view);
+  drawSelection(ctx);
   const ms = performance.now() - t0;
   if (ms > 24) log("warn", "paint_slow", { ms: Math.round(ms), items: scene.items.length });
 }
@@ -198,9 +208,12 @@ function bindToolbar() {
     if (!btn) continue;
     bindTap(btn, () => {
       tool = name;
+      if (name !== "select") selected = null;
+      canvas.style.cursor = name === "select" ? "grab" : "crosshair";
       for (const el of document.querySelectorAll("[data-tool]"))
         el.setAttribute("aria-pressed", String(el.dataset.tool === tool));
       syncEraseUi();
+      paint();
     });
   }
   const swatches = document.getElementById("swatches");
@@ -425,6 +438,7 @@ async function switchTo(id, { skipSave } = {}) {
   active = drawing;
   dirty = false;
   applyDocToScene(drawing, scene);
+  selected = null;
   const paperEl = document.getElementById("paper");
   if (paperEl) paperEl.value = scene.paper;
   if (!openIds.includes(id)) openIds.push(id);
@@ -726,6 +740,10 @@ function onDown(e) {
     return;
   }
   const world = screenToWorld(pos.x, pos.y);
+  if (tool === "select") {
+    startSelect(world, e);
+    return;
+  }
   if (tool === "eraser") {
     showEraseCursor(e.clientX, e.clientY);
     checkpoint(scene);
@@ -785,6 +803,19 @@ function applyMove(e) {
   }
   if (!current) return;
   const world = screenToWorld(pos.x, pos.y);
+  if (current.kind === "move") {
+    translateItem(current.item, world.x - current.lx, world.y - current.ly);
+    current.lx = world.x;
+    current.ly = world.y;
+    paint();
+    return;
+  }
+  if (current.kind === "rotate") {
+    const ang = Math.atan2(world.y - current.cy, world.x - current.cx);
+    current.item.rot = current.rot0 + (ang - current.start);
+    paint();
+    return;
+  }
   if (current.kind === "erase") {
     showEraseCursor(e.clientX, e.clientY);
     if (eraseAt(scene, world.x, world.y, eraserRadiusWorld(), "pixel"))
@@ -821,6 +852,74 @@ function onUp(e) {
     const item = finished;
     requestAnimationFrame(() => beautifyInk(item));
   }
+}
+
+function startSelect(world, e) {
+  const handle = selected && rotateHandle(selected);
+  const hs = 16 / view.scale;
+  if (handle && Math.hypot(world.x - handle.x, world.y - handle.y) <= hs) {
+    checkpoint(scene);
+    const c = itemCenter(selected);
+    current = {
+      kind: "rotate",
+      item: selected,
+      cx: c.x,
+      cy: c.y,
+      start: Math.atan2(world.y - c.y, world.x - c.x),
+      rot0: selected.rot || 0,
+      pointerType: e.pointerType,
+      pointerId: e.pointerId,
+    };
+    paint();
+    return;
+  }
+  const hit = hitTop(scene.items, world.x, world.y);
+  selected = hit;
+  if (hit) {
+    checkpoint(scene);
+    current = {
+      kind: "move",
+      item: hit,
+      lx: world.x,
+      ly: world.y,
+      pointerType: e.pointerType,
+      pointerId: e.pointerId,
+    };
+  }
+  paint();
+}
+
+function drawSelection(ctx) {
+  if (!selected || !scene.items.includes(selected)) {
+    selected = null;
+    return;
+  }
+  const b = localBounds(selected);
+  if (!b) return;
+  const c = itemCenter(selected);
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  ctx.save();
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.translate(view.panX, view.panY);
+  ctx.scale(view.scale, view.scale);
+  ctx.translate(c.x, c.y);
+  ctx.rotate(selected.rot || 0);
+  ctx.translate(-c.x, -c.y);
+  const lw = 1.5 / view.scale;
+  ctx.strokeStyle = "#2f6fed";
+  ctx.lineWidth = lw;
+  ctx.strokeRect(b.minX - 6, b.minY - 6, b.w + 12, b.h + 12);
+  const hx = c.x;
+  const hy = b.minY - 28;
+  ctx.beginPath();
+  ctx.moveTo(c.x, b.minY - 6);
+  ctx.lineTo(hx, hy);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(hx, hy, 9 / view.scale, 0, Math.PI * 2);
+  ctx.fillStyle = "#2f6fed";
+  ctx.fill();
+  ctx.restore();
 }
 
 function beautifyInk(item) {

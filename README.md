@@ -44,7 +44,7 @@ Safari on iPad cannot share another app's screen, so the board page itself is th
 
 Drawings save on the laptop (`data/drawings/`). Use **+** for a new tab, tap a tab to switch (OBS follows the active tab), and **Drawings** to open, rename, or delete. Delete moves a board to Recently deleted for 30 days, then it is gone. Closing a tab does not delete the drawing. Refresh reloads the board page.
 
-A single large freehand box, circle, line, or arrow snaps to that shape after you lift. Small loops and handwriting stay as ink. The eraser wipes through marks instead of deleting a whole object.
+A single large freehand box, circle, line, or arrow snaps to that shape after you lift. Small loops and handwriting stay as ink. The eraser wipes through marks instead of deleting a whole object. The move tool (cross arrows) lets you drag and rotate a selected item.
 
 Apple Pencil: rest your palm, write. If strokes still vanish, iPad Settings → Apple Pencil → Scribble off (Safari can steal handwriting).
 
