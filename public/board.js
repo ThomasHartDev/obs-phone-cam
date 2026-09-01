@@ -194,32 +194,14 @@ sig.addEventListener("superseded", () => {
 
 function bindTap(el, fn) {
   if (!el) return;
-  let last = 0;
-  const run = (e) => {
-    e.stopPropagation();
-    const now = Date.now();
-    if (now - last < 350) return;
-    last = now;
-    fn(e);
-  };
   el.addEventListener("pointerdown", (e) => e.stopPropagation());
-  el.addEventListener("pointerup", (e) => {
-    e.preventDefault();
-    run(e);
+  el.addEventListener("click", (e) => {
+    e.stopPropagation();
+    fn(e);
   });
-  el.addEventListener("click", run);
 }
 
 function bindToolbar() {
-  document.querySelector(".board-hud")?.addEventListener(
-    "pointerdown",
-    (e) => {
-      if (e.target.closest("button, select, input, label, .tab, .library")) {
-        e.stopPropagation();
-      }
-    },
-    true,
-  );
   for (const name of TOOLS) {
     const btn = document.querySelector(`[data-tool="${name}"]`);
     if (!btn) continue;
@@ -789,10 +771,11 @@ function onDown(e) {
 
 function onMove(e) {
   if (sharing) return;
+  const tracking =
+    pointers.has(e.pointerId) || (current && current.pointerId === e.pointerId);
+  if (!tracking) return;
   e.preventDefault();
   if (shouldIgnoreTouch(e.pointerType, pointers, current && current.pointerType))
-    return;
-  if (!pointers.has(e.pointerId) && !(current && current.pointerId === e.pointerId))
     return;
   applyMove(e);
 }
@@ -832,6 +815,10 @@ function applyMove(e) {
 }
 
 function onUp(e) {
+  if (e.target && e.target.closest && e.target.closest(".board-hud, .library, .board-log")) {
+    pointers.delete(e.pointerId);
+    return;
+  }
   pointers.delete(e.pointerId);
   if (!shouldStartPinch(pointers)) pinch = null;
   const penStillDown = [...pointers.values()].some((p) => p.type === "pen");
