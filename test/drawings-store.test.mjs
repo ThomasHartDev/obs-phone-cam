@@ -34,6 +34,26 @@ test("store put/list/get/remove round trip", async () => {
   assert.equal(await store.remove(a.id), true);
   assert.equal((await store.list()).length, 1);
   assert.equal(await store.get(a.id), null);
+  const bin = await store.list({ trash: true });
+  assert.equal(bin.length, 1);
+  assert.equal(bin[0].id, a.id);
+  const back = await store.restore(a.id);
+  assert.equal(back.title, "Intro");
+  assert.equal((await store.list()).length, 2);
+});
+
+test("expired trash is purged", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "obscam-draw-"));
+  const store = createDrawingsStore(dir, { keepMs: 5 });
+  const a = await store.put(createDoc({ id: "d_test_cccccc", title: "Old" }));
+  await store.remove(a.id);
+  const file = path.join(dir, a.id + ".json");
+  const raw = JSON.parse(await fs.readFile(file, "utf8"));
+  raw.deletedAt = Date.now() - 50;
+  await fs.writeFile(file, JSON.stringify(raw));
+  await store.purgeExpired();
+  assert.equal(await store.getAny(a.id), null);
+  assert.equal((await store.list({ trash: true })).length, 0);
 });
 
 test("scene round trip keeps ink", () => {

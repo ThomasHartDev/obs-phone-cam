@@ -60,6 +60,7 @@ let pointers = new Map();
 let pinch = null;
 const OPEN_KEY = "obscam.board.openTabs";
 let catalog = [];
+let trash = [];
 let openIds = [];
 let active = null;
 let dirty = false;
@@ -191,16 +192,43 @@ sig.addEventListener("superseded", () => {
   setStatus("Another tab took over this iPad board", "warn");
 });
 
+function bindTap(el, fn) {
+  if (!el) return;
+  let last = 0;
+  const run = (e) => {
+    e.stopPropagation();
+    const now = Date.now();
+    if (now - last < 350) return;
+    last = now;
+    fn(e);
+  };
+  el.addEventListener("pointerdown", (e) => e.stopPropagation());
+  el.addEventListener("pointerup", (e) => {
+    e.preventDefault();
+    run(e);
+  });
+  el.addEventListener("click", run);
+}
+
 function bindToolbar() {
+  document.querySelector(".board-hud")?.addEventListener(
+    "pointerdown",
+    (e) => {
+      if (e.target.closest("button, select, input, label, .tab, .library")) {
+        e.stopPropagation();
+      }
+    },
+    true,
+  );
   for (const name of TOOLS) {
     const btn = document.querySelector(`[data-tool="${name}"]`);
     if (!btn) continue;
-    btn.onclick = () => {
+    bindTap(btn, () => {
       tool = name;
       for (const el of document.querySelectorAll("[data-tool]"))
         el.setAttribute("aria-pressed", String(el.dataset.tool === tool));
       syncEraseUi();
-    };
+    });
   }
   const swatches = document.getElementById("swatches");
   for (const hex of COLORS) {
@@ -210,11 +238,11 @@ function bindToolbar() {
     b.style.background = hex;
     b.title = hex;
     b.setAttribute("aria-pressed", String(hex === color));
-    b.onclick = () => {
+    bindTap(b, () => {
       color = hex;
       for (const el of swatches.children)
         el.setAttribute("aria-pressed", String(el === b));
-    };
+    });
     swatches.appendChild(b);
   }
   const widthEl = document.getElementById("width");
@@ -234,40 +262,43 @@ function bindToolbar() {
   modeEl.onchange = () => {
     eraseMode = modeEl.value === "element" ? "element" : "pixel";
   };
-  document.getElementById("undoBtn").onclick = () => runUndo("tap");
-  document.getElementById("redoBtn").onclick = () => runRedo("tap");
-  document.getElementById("clearBtn").onclick = () => {
+  bindTap(document.getElementById("undoBtn"), () => runUndo("tap"));
+  bindTap(document.getElementById("redoBtn"), () => runRedo("tap"));
+  bindTap(document.getElementById("clearBtn"), () => {
     log("info", "clear_tap", { items: scene.items.length });
     clearBoard(scene);
     afterEdit();
-  };
+  });
   const logBtn = document.getElementById("logBtn");
   const logPanel = document.getElementById("boardLog");
   if (logBtn && logPanel) {
     attachLogPanel(logPanel);
-    logBtn.onclick = () => {
+    bindTap(logBtn, () => {
       logPanel.hidden = !logPanel.hidden;
       logBtn.setAttribute("aria-pressed", String(!logPanel.hidden));
       if (!logPanel.hidden) refreshLogPanel();
-    };
+    });
   }
   document.getElementById("paper").onchange = (e) => {
     setPaper(scene, e.target.value);
     afterEdit();
   };
-  document.getElementById("libBtn").onclick = () => {
+  bindTap(document.getElementById("refreshBtn"), () => location.reload());
+  bindTap(document.getElementById("libBtn"), () => {
     const el = document.getElementById("library");
     el.hidden = !el.hidden;
-    if (!el.hidden) renderLibrary();
-  };
-  document.getElementById("libClose").onclick = () => {
+    if (!el.hidden) {
+      loadTrash().then(() => renderLibrary());
+    }
+  });
+  bindTap(document.getElementById("libClose"), () => {
     document.getElementById("library").hidden = true;
-  };
-  document.getElementById("libNew").onclick = () => newTab();
-  document.getElementById("tabNew").onclick = () => newTab();
+  });
+  bindTap(document.getElementById("libNew"), () => newTab());
+  bindTap(document.getElementById("tabNew"), () => newTab());
   if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
     shareBtn.hidden = false;
-    shareBtn.onclick = toggleShare;
+    bindTap(shareBtn, () => toggleShare());
   }
   syncEraseUi();
 }
@@ -276,18 +307,19 @@ function syncEraseUi() {
   const erasing = tool === "eraser";
   document.getElementById("eraseMode").hidden = !erasing;
   const widthEl = document.getElementById("width");
-  const label = document.getElementById("widthLabel");
   if (erasing) {
     widthEl.min = "12";
     widthEl.max = "180";
     widthEl.value = String(eraserDiameter);
-    if (label) label.firstChild.textContent = "Eraser ";
+    const noun = document.getElementById("widthNoun");
+    if (noun) noun.textContent = "Eraser";
     canvas.style.cursor = "none";
   } else {
     widthEl.min = "2";
     widthEl.max = "18";
     widthEl.value = String(width);
-    if (label) label.firstChild.textContent = "Size";
+    const noun = document.getElementById("widthNoun");
+    if (noun) noun.textContent = "Size";
     canvas.style.cursor = "crosshair";
     hideEraseCursor();
   }
@@ -431,15 +463,24 @@ async function switchTo(id, { skipSave } = {}) {
 }
 
 async function newTab() {
-  await flushSave().catch(() => {});
-  const doc = await putDrawing(
-    createDoc({ title: "Drawing " + (catalog.length + 1) }),
-  );
-  upsertCatalog(metaOf(doc));
-  openIds.push(doc.id);
-  persistOpen();
-  await switchTo(doc.id, { skipSave: true });
-  document.getElementById("library").hidden = true;
+  try {
+    await flushSave().catch(() => {});
+    const doc = await putDrawing(
+      createDoc({ title: "Drawing " + (catalog.length + 1) }),
+    );
+    upsertCatalog(metaOf(doc));
+    if (!openIds.includes(doc.id)) openIds.push(doc.id);
+    persistOpen();
+    await switchTo(doc.id, { skipSave: true });
+    const lib = document.getElementById("library");
+    if (lib) lib.hidden = true;
+    log("info", "new_drawing", { id: doc.id });
+  } catch (err) {
+    log("error", "new_drawing_fail", {
+      message: String(err && err.message ? err.message : err),
+    });
+    setStatus("Could not create drawing", "warn");
+  }
 }
 
 async function putDrawing(doc) {
@@ -528,6 +569,44 @@ function renderLibrary() {
     li.append(open, date, rename, del);
     ul.appendChild(li);
   }
+  const trashUl = document.getElementById("trashList");
+  if (!trashUl) return;
+  trashUl.replaceChildren();
+  if (!trash.length) {
+    const empty = document.createElement("li");
+    empty.className = "lib-date";
+    empty.textContent = "Empty";
+    trashUl.appendChild(empty);
+    return;
+  }
+  for (const meta of trash) {
+    const li = document.createElement("li");
+    const open = document.createElement("span");
+    open.className = "lib-open";
+    open.textContent = meta.title;
+    const rest = document.createElement("button");
+    rest.type = "button";
+    rest.className = "lib-rename";
+    rest.textContent = "Restore";
+    rest.onclick = () => restoreDoc(meta.id);
+    const gone = document.createElement("button");
+    gone.type = "button";
+    gone.className = "lib-del";
+    gone.textContent = "Delete forever";
+    gone.onclick = () => purgeDoc(meta.id);
+    li.append(open, rest, gone);
+    trashUl.appendChild(li);
+  }
+}
+
+async function loadTrash() {
+  try {
+    const r = await fetch("/drawings?trash=1");
+    const j = await r.json();
+    trash = Array.isArray(j.drawings) ? j.drawings : [];
+  } catch {
+    trash = [];
+  }
 }
 
 async function renameDoc(id) {
@@ -553,12 +632,35 @@ async function renameDoc(id) {
 }
 
 async function deleteDoc(id) {
-  if (!window.confirm("Delete this drawing?")) return;
+  if (!window.confirm("Move this drawing to Recently deleted?")) return;
   await fetch("/drawings/" + encodeURIComponent(id), { method: "DELETE" });
   catalog = catalog.filter((d) => d.id !== id);
   if (openIds.includes(id)) await closeTab(id);
+  await loadTrash();
   renderLibrary();
   renderTabs();
+}
+
+async function restoreDoc(id) {
+  const r = await fetch("/drawings/" + encodeURIComponent(id) + "/restore", {
+    method: "POST",
+  });
+  if (!r.ok) return;
+  const { drawing } = await r.json();
+  upsertCatalog(metaOf(drawing));
+  trash = trash.filter((d) => d.id !== id);
+  await switchTo(drawing.id, { skipSave: true });
+  renderLibrary();
+  renderTabs();
+}
+
+async function purgeDoc(id) {
+  if (!window.confirm("Delete forever? This cannot be undone.")) return;
+  await fetch("/drawings/" + encodeURIComponent(id) + "?hard=1", {
+    method: "DELETE",
+  });
+  trash = trash.filter((d) => d.id !== id);
+  renderLibrary();
 }
 
 async function bootDocs() {

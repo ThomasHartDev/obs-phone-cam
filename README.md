@@ -42,7 +42,7 @@ Then:
 
 Safari on iPad cannot share another app's screen, so the board page itself is the drawing surface. Pick **Green (chroma)** paper if you want to key the drawing over the camera in OBS. On a desktop browser that supports window share, the board page also has **Share window** for a real Excalidraw tab.
 
-Drawings save on the laptop (`data/drawings/`). Use **+** for a new tab, tap a tab to switch (OBS follows the active tab), and **Drawings** to open, rename, or delete saved boards. Closing a tab does not delete the drawing.
+Drawings save on the laptop (`data/drawings/`). Use **+** for a new tab, tap a tab to switch (OBS follows the active tab), and **Drawings** to open, rename, or delete. Delete moves a board to Recently deleted for 30 days, then it is gone. Closing a tab does not delete the drawing. Refresh reloads the board page.
 
 Freehand boxes, ovals, lines, and arrows snap to clean shapes when you lift. After you pause about two seconds, handwriting becomes real text. If that writing sits right above, below, or inside a shape, it snaps there; farther away it stays where you started.
 
