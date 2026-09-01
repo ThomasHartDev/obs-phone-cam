@@ -264,27 +264,32 @@ export function renderBoard(ctx, board, view) {
   const paper = PAPERS[board.paper] || PAPERS.white;
   ctx.fillStyle = paper.fill;
   ctx.fillRect(0, 0, w, h);
-  if (paper.grid) {
-    const step = 48 * (view.scale || 1);
-    const originX = ((view.panX % step) + step) % step;
-    const originY = ((view.panY % step) + step) % step;
-    ctx.strokeStyle =
-      board.paper === "dark" ? "rgba(255,255,255,0.06)" : "rgba(20,24,30,0.08)";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    for (let x = originX; x <= w; x += step) {
-      ctx.moveTo(x + 0.5, 0);
-      ctx.lineTo(x + 0.5, h);
-    }
-    for (let y = originY; y <= h; y += step) {
-      ctx.moveTo(0, y + 0.5);
-      ctx.lineTo(w, y + 0.5);
-    }
-    ctx.stroke();
-  }
   ctx.save();
   ctx.translate(view.panX, view.panY);
   ctx.scale(view.scale, view.scale);
+  if (paper.grid) {
+    const step = 48;
+    const scale = view.scale || 1;
+    const x0 = -view.panX / scale;
+    const y0 = -view.panY / scale;
+    const x1 = (w - view.panX) / scale;
+    const y1 = (h - view.panY) / scale;
+    const sx = Math.floor(x0 / step) * step;
+    const sy = Math.floor(y0 / step) * step;
+    ctx.strokeStyle =
+      board.paper === "dark" ? "rgba(255,255,255,0.06)" : "rgba(20,24,30,0.08)";
+    ctx.lineWidth = 1 / scale;
+    ctx.beginPath();
+    for (let x = sx; x <= x1; x += step) {
+      ctx.moveTo(x, y0);
+      ctx.lineTo(x, y1);
+    }
+    for (let y = sy; y <= y1; y += step) {
+      ctx.moveTo(x0, y);
+      ctx.lineTo(x1, y);
+    }
+    ctx.stroke();
+  }
   for (const item of board.items) {
     const rot = item.rot || 0;
     if (!rot) {
