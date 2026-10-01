@@ -24,6 +24,8 @@ On the laptop that has OBS:
 
 **Windows:** double-click **`Phone Cam.exe`** on the desktop (rebuild with `windows\build-phone-cam-exe.bat`). It starts the server if needed and always opens three tabs: laptop controls, iPhone feed, iPad board feed. `Start Phone Cam.bat` does the same via node.
 
+To pair the phone, open **Phone Cam QR** on the desktop or press **Ctrl+Alt+Q**. It starts the server minimized if needed and shows the pairing QR in a small window. The same build script makes it.
+
 **Or from a terminal (any OS):**
 
 ```bash

@@ -30,6 +30,19 @@ test("Phone Cam.exe opens the same three URLs as launchUrls", () => {
   }
 });
 
+test("Phone Cam QR points at the pairing page", () => {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const cs = fs.readFileSync(
+    path.join(here, "..", "windows", "PhoneCamQr.cs"),
+    "utf8",
+  );
+  assert.ok(cs.includes("http://localhost:8444/pair.html"));
+  assert.ok(
+    fs.existsSync(path.join(here, "..", "public", "pair.html")),
+    "pair page must exist",
+  );
+});
+
 test("openLaunchTabs staggers calls and no-ops without a function", () => {
   const hits = [];
   openLaunchTabs((u) => hits.push(u), ["a", "b"], 0);
