@@ -2,7 +2,7 @@ export function launchUrls(httpsPort, httpPort) {
   const https = Number(httpsPort) || 8443;
   const http = Number(httpPort) || https + 1;
   return [
-    `https://localhost:${https}/`,
+    `http://localhost:${http}/`,
     `http://localhost:${http}/receiver.html`,
     `http://localhost:${http}/board-receiver.html`,
   ];

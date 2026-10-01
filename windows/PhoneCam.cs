@@ -64,7 +64,7 @@ internal static class PhoneCam
             }
         }
 
-        Open("https://localhost:8443/");
+        Open("http://localhost:8444/");
         Thread.Sleep(400);
         Open("http://localhost:8444/receiver.html");
         Thread.Sleep(400);
