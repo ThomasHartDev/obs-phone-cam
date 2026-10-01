@@ -9,6 +9,7 @@ public/vendor/
 windows/*.exe
 
 data/
+*.traineddata
 
 .task/
 
