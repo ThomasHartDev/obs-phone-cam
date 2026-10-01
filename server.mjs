@@ -610,7 +610,7 @@ httpsServer.listen(PORT, "0.0.0.0", () => {
   console.log("\n  obs-phone-cam is running.");
   console.log(`  TLS: ${tls.source}\n`);
   console.log("  Laptop tabs: controls, iPhone feed, iPad feed.");
-  console.log(`    https://localhost:${PORT}/`);
+  console.log(`    http://localhost:${HTTP_PORT}/`);
   console.log(`    http://localhost:${HTTP_PORT}/receiver.html`);
   console.log(`    http://localhost:${HTTP_PORT}/board-receiver.html\n`);
   console.log("  On the iPhone (same Wi-Fi), open the sender page:");

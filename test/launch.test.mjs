@@ -8,7 +8,7 @@ import { launchUrls, openLaunchTabs } from "../launch.mjs";
 test("launch opens controls plus phone and iPad feed viewers", () => {
   const urls = launchUrls(8443, 8444);
   assert.deepEqual(urls, [
-    "https://localhost:8443/",
+    "http://localhost:8444/",
     "http://localhost:8444/receiver.html",
     "http://localhost:8444/board-receiver.html",
   ]);

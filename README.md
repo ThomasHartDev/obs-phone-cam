@@ -89,7 +89,7 @@ Runs a headless-Chrome E2E (Playwright, `channel: 'chrome'`) with a fake camera:
 
 ## Config
 
-- `PORT` (default `8443`) — HTTPS port. Plain HTTP on `PORT+1` 301-redirects to HTTPS.
+- `PORT` (default `8443`): HTTPS port for the phone and iPad. Plain HTTP on `PORT+1` serves the laptop pages (controls, OBS receivers) with no certificate involved.
 
 ## Stack
 
