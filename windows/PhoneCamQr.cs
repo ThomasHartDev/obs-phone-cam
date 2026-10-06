@@ -20,7 +20,7 @@ internal static class PhoneCamQr
     [DllImport("user32.dll")] static extern bool MoveWindow(IntPtr hwnd, int x, int y, int w, int h, bool repaint);
     [DllImport("user32.dll")] static extern int GetSystemMetrics(int index);
 
-    static string FindChrome()
+    public static string FindChrome()
     {
         foreach (RegistryKey root in new[] { Registry.CurrentUser, Registry.LocalMachine })
         {

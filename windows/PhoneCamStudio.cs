@@ -51,8 +51,17 @@ internal static class PhoneCamStudio
         PhoneCamServer.BringToFront(hwnd);
     }
 
+    const string AppUserModelId = "ThomasHart.PhoneCamStudio";
+
     static void Main(string[] args)
     {
+        if (args.Length > 0 && args[0] == "--install")
+        {
+            string obsExe = FindObs();
+            string lnk = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), "Phone Cam Studio.lnk");
+            AppId.WriteShortcut(lnk, Application.ExecutablePath, obsExe ?? Application.ExecutablePath, AppUserModelId, "Phone cam server, OBS and the pairing QR in one click");
+            return;
+        }
         // A double-click would otherwise start OBS twice and trip its "already running" dialog.
         bool first;
         using (new Mutex(true, "PhoneCamStudio", out first))

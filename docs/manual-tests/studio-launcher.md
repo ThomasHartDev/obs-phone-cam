@@ -28,3 +28,7 @@ checked on the Windows laptop.
 5. **No OBS.** On a machine without OBS, click the icon. Expected: a message
    says OBS Studio couldn't be found, and the server is still running.
    Pass / Fail: ____
+6. **Studio pin stays put.** Pin Phone Cam Studio from the Start menu and
+   click it twice. Expected: the pin keeps the OBS icon and doesn't turn into
+   Chrome, and every click reruns the setup (OBS forward, QR on top).
+   Pass / Fail: ____

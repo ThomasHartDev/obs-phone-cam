@@ -51,10 +51,22 @@ test("Studio starts the server before OBS, then shows the pairing QR", () => {
   );
   const main = cs.slice(cs.indexOf("static void Main"));
   const server = main.indexOf("PhoneCamServer.EnsureRunning");
-  const obs = main.indexOf("Process.Start");
+  const obs = main.indexOf("--scene");
   const qr = main.indexOf("PhoneCamQr.ShowPairWindow");
   assert.ok(server >= 0 && obs > server, "server must start before OBS");
   assert.ok(qr > obs, "QR must open after OBS so it lands on top");
+});
+
+test("pinnable launchers give their shortcut an app ID, and the board its window too", () => {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  for (const file of ["PhoneCamStudio.cs", "DrawingBoard.cs"]) {
+    const cs = fs.readFileSync(path.join(here, "..", "windows", file), "utf8");
+    assert.match(cs, /const string AppUserModelId = "ThomasHart\.\w+";/, file);
+    assert.match(cs, /WriteShortcut\([^;]*AppUserModelId/, file + " shortcut");
+    if (file === "DrawingBoard.cs") {
+      assert.match(cs, /TagWindow\([^;]*AppUserModelId/, file + " window");
+    }
+  }
 });
 
 test("openLaunchTabs staggers calls and no-ops without a function", () => {
