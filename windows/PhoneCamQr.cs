@@ -18,7 +18,6 @@ internal static class PhoneCamQr
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr hwnd, StringBuilder text, int max);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr hwnd, StringBuilder name, int max);
     [DllImport("user32.dll")] static extern bool MoveWindow(IntPtr hwnd, int x, int y, int w, int h, bool repaint);
-    [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr hwnd);
     [DllImport("user32.dll")] static extern int GetSystemMetrics(int index);
 
     static string FindChrome()
@@ -58,10 +57,15 @@ internal static class PhoneCamQr
         int x = (GetSystemMetrics(0) - Width) / 2;
         int y = (GetSystemMetrics(1) - Height) / 2;
         MoveWindow(hwnd, Math.Max(0, x), Math.Max(0, y), Width, Height, true);
-        SetForegroundWindow(hwnd);
+        PhoneCamServer.BringToFront(hwnd);
     }
 
     static void Main()
+    {
+        ShowPairWindow();
+    }
+
+    public static void ShowPairWindow()
     {
         if (!PhoneCamServer.EnsureRunning(ProcessWindowStyle.Minimized)) return;
 

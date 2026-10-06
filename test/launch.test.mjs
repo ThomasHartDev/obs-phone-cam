@@ -43,6 +43,20 @@ test("Phone Cam QR points at the pairing page", () => {
   );
 });
 
+test("Studio starts the server before OBS, then shows the pairing QR", () => {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const cs = fs.readFileSync(
+    path.join(here, "..", "windows", "PhoneCamStudio.cs"),
+    "utf8",
+  );
+  const main = cs.slice(cs.indexOf("static void Main"));
+  const server = main.indexOf("PhoneCamServer.EnsureRunning");
+  const obs = main.indexOf("Process.Start");
+  const qr = main.indexOf("PhoneCamQr.ShowPairWindow");
+  assert.ok(server >= 0 && obs > server, "server must start before OBS");
+  assert.ok(qr > obs, "QR must open after OBS so it lands on top");
+});
+
 test("openLaunchTabs staggers calls and no-ops without a function", () => {
   const hits = [];
   openLaunchTabs((u) => hits.push(u), ["a", "b"], 0);
