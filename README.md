@@ -24,6 +24,8 @@ On the laptop that has OBS:
 
 **Windows:** double-click **`Phone Cam.exe`** on the desktop (rebuild with `windows\build-phone-cam-exe.bat`). It starts the server if needed and always opens three tabs: laptop controls, iPhone feed, iPad board feed. `Start Phone Cam.bat` does the same via node.
 
+**One-click recording setup:** the build also adds **Phone Cam Studio** to the Start menu (OBS icon). Right-click it and pin it to the taskbar. One click starts the server, opens OBS on the `Screen + Face` scene (or brings it forward if it's already open), then puts the pairing QR on top. To open a different scene, set the user environment variable `PHONE_CAM_SCENE` to its name (for example `setx PHONE_CAM_SCENE "Code"`); the pinned icon uses it the next time it has to start OBS (an already-open OBS keeps its current scene).
+
 To pair the phone, open **Phone Cam QR** on the desktop or press **Ctrl+Alt+Q**. It starts the server minimized if needed and shows the pairing QR in a small window. The same build script makes it.
 
 **Or from a terminal (any OS):**

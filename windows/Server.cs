@@ -92,4 +92,17 @@ internal static class PhoneCamServer
     {
         Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
     }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr hwnd);
+    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
+
+    // Windows refuses SetForegroundWindow once this process has handed focus to another window
+    // (OBS, then Chrome); a synthetic Alt tap lifts that lock, so it's only the fallback.
+    public static void BringToFront(IntPtr hwnd)
+    {
+        if (SetForegroundWindow(hwnd)) return;
+        keybd_event(0x12, 0, 0, UIntPtr.Zero);
+        keybd_event(0x12, 0, 2, UIntPtr.Zero);
+        SetForegroundWindow(hwnd);
+    }
 }
