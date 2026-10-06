@@ -57,9 +57,8 @@ internal static class PhoneCamStudio
     {
         if (args.Length > 0 && args[0] == "--install")
         {
-            string obsExe = FindObs();
             string lnk = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), "Phone Cam Studio.lnk");
-            AppId.WriteShortcut(lnk, Application.ExecutablePath, obsExe ?? Application.ExecutablePath, AppUserModelId, "Phone cam server, OBS and the pairing QR in one click");
+            AppId.WriteShortcut(lnk, Application.ExecutablePath, Application.ExecutablePath, AppUserModelId, "Phone cam server, OBS and the pairing QR in one click");
             return;
         }
         // A double-click would otherwise start OBS twice and trip its "already running" dialog.

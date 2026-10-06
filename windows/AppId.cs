@@ -85,9 +85,19 @@ internal static class AppId
             Set(store, Id, id);
             store.Commit();
             ((IPersistFile)link).Save(lnk, true);
+            // A taskbar pin is its own copy of the shortcut, so refresh it too or it keeps the old icon.
+            string pin = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), @"Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar", Path.GetFileName(lnk));
+            try { if (File.Exists(pin)) ((IPersistFile)link).Save(pin, true); }
+            catch (COMException) { }
+            catch (UnauthorizedAccessException) { }
+            catch (IOException) { }
         }
         finally { Marshal.ReleaseComObject(link); }
+        SHChangeNotify(0x08000000, 0, IntPtr.Zero, IntPtr.Zero);
     }
+
+    [DllImport("shell32.dll")]
+    static extern void SHChangeNotify(int eventId, uint flags, IntPtr item1, IntPtr item2);
 
     // Works on another process's window too, which is how a Chrome --app window joins our pin.
     public static void TagWindow(IntPtr hwnd, string id, string relaunch, string name, string icon)

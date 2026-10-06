@@ -6,7 +6,7 @@ checked on the Windows laptop.
 
 ## Prerequisites
 
-- Run `windows\build-phone-cam-exe.bat`. It adds **Phone Cam Studio** (OBS icon) to the
+- Run `windows\build-phone-cam-exe.bat`. It adds **Phone Cam Studio** (camera icon) to the
   Start menu. Right-click it and choose **Pin to taskbar**.
 - OBS Studio installed, with a scene named `Screen + Face`.
 
@@ -29,6 +29,10 @@ checked on the Windows laptop.
    says OBS Studio couldn't be found, and the server is still running.
    Pass / Fail: ____
 6. **Studio pin stays put.** Pin Phone Cam Studio from the Start menu and
-   click it twice. Expected: the pin keeps the OBS icon and doesn't turn into
+   click it twice. Expected: the pin keeps the camera icon and doesn't turn into
    Chrome, and every click reruns the setup (OBS forward, QR on top).
    Pass / Fail: ____
+7. **Existing pin gets the new icon.** With Phone Cam Studio already pinned
+   (old OBS icon), rerun `windows\build-phone-cam-exe.bat`. Expected: the pin
+   switches to the camera icon without unpinning, and clicking it still runs
+   the full setup. Pass / Fail: ____

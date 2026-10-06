@@ -8,7 +8,7 @@ if errorlevel 1 exit /b 1
 set PHONE_CAM_WINDOWS=%~dp0
 powershell -NoProfile -Command "$ErrorActionPreference = 'Stop'; $desk = [Environment]::GetFolderPath('Desktop'); Copy-Item -Force (Join-Path $env:PHONE_CAM_WINDOWS 'PhoneCamLauncher.exe') (Join-Path $desk 'Phone Cam.exe'); $s = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $desk 'Phone Cam QR.lnk')); $s.TargetPath = Join-Path $env:PHONE_CAM_WINDOWS 'PhoneCamQrLauncher.exe'; $s.WorkingDirectory = $env:PHONE_CAM_WINDOWS; $s.Hotkey = 'CTRL+ALT+Q'; $s.Description = 'Show the QR that pairs the iPhone camera'; $s.Save()"
 if errorlevel 1 exit /b 1
-"%CSC%" /nologo /target:winexe /main:PhoneCamStudio /out:"%~dp0PhoneCamStudio.exe" "%~dp0PhoneCamStudio.cs" "%~dp0PhoneCamQr.cs" "%~dp0Server.cs" "%~dp0AppId.cs"
+"%CSC%" /nologo /target:winexe /main:PhoneCamStudio /win32icon:"%~dp0phone-cam-studio.ico" /out:"%~dp0PhoneCamStudio.exe" "%~dp0PhoneCamStudio.cs" "%~dp0PhoneCamQr.cs" "%~dp0Server.cs" "%~dp0AppId.cs"
 if errorlevel 1 exit /b 1
 "%CSC%" /nologo /target:winexe /main:DrawingBoard /win32icon:"%~dp0drawing-board.ico" /r:System.Management.dll /out:"%~dp0DrawingBoard.exe" "%~dp0DrawingBoard.cs" "%~dp0PhoneCamQr.cs" "%~dp0Server.cs" "%~dp0AppId.cs"
 if errorlevel 1 exit /b 1
