@@ -10,6 +10,7 @@ using System.Windows.Forms;
 internal static class DrawingBoard
 {
     const string AppUserModelId = "ThomasHart.DrawingBoard";
+    const int SwMaximize = 3;
     const string Url = "https://excalidraw.com/";
     static readonly string Profile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "FreeCodeBoard");
     static readonly string ProfileArg = "--user-data-dir=\"" + Profile + "\"";
@@ -20,7 +21,6 @@ internal static class DrawingBoard
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr hwnd, StringBuilder text, int max);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr hwnd, StringBuilder name, int max);
     [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr hwnd, int cmd);
-    [DllImport("user32.dll")] static extern bool IsIconic(IntPtr hwnd);
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
 
     static bool IsBoardProfile(uint pid)
@@ -66,7 +66,7 @@ internal static class DrawingBoard
 
     static void Install(string exe)
     {
-        string description = "Excalidraw in its own Chrome profile for the OBS Board scene";
+        string description = "Excalidraw in its own Chrome profile, maximized for the OBS Excalidraw scene";
         foreach (Environment.SpecialFolder folder in new[] { Environment.SpecialFolder.Programs, Environment.SpecialFolder.DesktopDirectory })
         {
             AppId.WriteShortcut(Path.Combine(Environment.GetFolderPath(folder), "Drawing Board.lnk"), exe, exe, AppUserModelId, description);
@@ -128,7 +128,8 @@ internal static class DrawingBoard
         }
 
         AppId.TagWindow(hwnd, AppUserModelId, exe, "Drawing Board", exe);
-        if (IsIconic(hwnd)) ShowWindow(hwnd, 9);
+        // OBS's Excalidraw view captures the screen (the board's title keeps changing), so the board has to fill it.
+        ShowWindow(hwnd, SwMaximize);
         PhoneCamServer.BringToFront(hwnd);
     }
 }

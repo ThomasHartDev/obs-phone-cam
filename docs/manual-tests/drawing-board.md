@@ -14,10 +14,10 @@ the Windows laptop.
 
 1. **Cold start.** Close the board window, then click Drawing Board.
    Expected: Excalidraw opens as its own window (no tabs or address bar) in the
-   `FreeCodeBoard` profile and comes to the front. Pass / Fail: ____
-2. **Already open.** With the board behind other windows, click it again.
-   Expected: the same window comes forward and no second one opens.
-   Pass / Fail: ____
+   `FreeCodeBoard` profile, maximized, and comes to the front. Pass / Fail: ____
+2. **Already open.** Restore the board to a smaller size behind other windows,
+   then click it again. Expected: the same window comes forward maximized and no
+   second one opens. Pass / Fail: ____
 3. **Pin.** Right-click Drawing Board in the Start menu, Pin to taskbar, then
    click the pin. Expected: the pin keeps the whiteboard icon, the board window
    shows up under that pin and not under Chrome, and the pin still works after
@@ -25,5 +25,6 @@ the Windows laptop.
 4. **Your own Excalidraw tab.** Open excalidraw.com in normal Chrome, then click
    the pin. Expected: the board profile window opens anyway and the normal tab
    stays under Chrome. Pass / Fail: ____
-5. **OBS.** Switch OBS to the Board scene. Expected: it captures the board
-   window. Pass / Fail: ____
+5. **OBS.** Click into the board. Expected: OBS switches to the Excalidraw
+   scene by itself, and the board fills the frame with only the face card on
+   top (no Chrome title bar, no taskbar). Pass / Fail: ____

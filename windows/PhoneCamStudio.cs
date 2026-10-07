@@ -8,7 +8,7 @@ using Microsoft.Win32;
 
 internal static class PhoneCamStudio
 {
-    const string DefaultScene = "Screen + Face";
+    const string DefaultScene = "Browser";
 
     [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr hwnd, int cmd);
     [DllImport("user32.dll")] static extern bool IsIconic(IntPtr hwnd);
