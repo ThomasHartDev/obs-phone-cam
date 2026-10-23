@@ -30,6 +30,8 @@ On the laptop that has OBS:
 
 To pair the phone, open **Phone Cam QR** on the desktop or press **Ctrl+Alt+Q**. It starts the server minimized if needed and shows the pairing QR in a small window. The same build script makes it.
 
+If Cloudflare WARP (1.1.1.1) is on, every launcher first keeps `8.8.8.8` and `2001:4860:4860::8888` out of the tunnel. Chrome and the OBS browser source pick the network they offer the phone by where those addresses route, and through WARP that's the tunnel, so the phone opens the page but never connects. Remove them with `warp-cli tunnel ip remove <ip>` if you don't use the phone cam.
+
 **Or from a terminal (any OS):**
 
 ```bash

@@ -36,3 +36,7 @@ checked on the Windows laptop.
    (old OBS icon), rerun `windows\build-phone-cam-exe.bat`. Expected: the pin
    switches to the camera icon without unpinning, and clicking it still runs
    the full setup. Pass / Fail: ____
+8. **Cloudflare WARP on.** With WARP connected, run
+   `warp-cli tunnel ip remove 8.8.8.8` and `warp-cli tunnel ip remove 2001:4860:4860::8888`,
+   then click the icon and scan the QR. Expected: `warp-cli tunnel ip list` shows both
+   addresses again and the phone goes live in OBS. Pass / Fail: ____

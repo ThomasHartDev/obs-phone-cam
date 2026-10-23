@@ -48,8 +48,50 @@ internal static class PhoneCamServer
         MessageBox.Show(message, "Phone Cam", MessageBoxButtons.OK, MessageBoxIcon.Error);
     }
 
+    static string Warp(string warpCli, string args)
+    {
+        try
+        {
+            using (Process p = Process.Start(new ProcessStartInfo
+            {
+                FileName = warpCli,
+                Arguments = args,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+            }))
+            {
+                string output = p.StandardOutput.ReadToEnd();
+                p.WaitForExit(5000);
+                return output;
+            }
+        }
+        catch
+        {
+            return "";
+        }
+    }
+
+    // Without camera permission Chrome (and OBS's browser source) offers WebRTC only the
+    // interface that routes to these probe addresses. Through Cloudflare WARP that's the
+    // tunnel, which the phone can't reach, so keep them on the Wi-Fi.
+    static readonly string[] ChromeRouteProbes = { "8.8.8.8/32", "2001:4860:4860::8888/128" };
+
+    static void KeepWebRtcOnLan()
+    {
+        string warpCli = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), @"Cloudflare\Cloudflare WARP\warp-cli.exe");
+        if (!File.Exists(warpCli)) return;
+        string routes = Warp(warpCli, "tunnel ip list --no-paginate");
+        if (!routes.StartsWith("Excluded")) return;
+        foreach (string probe in ChromeRouteProbes)
+        {
+            if (!routes.Contains(probe)) Warp(warpCli, "tunnel ip add " + probe.Substring(0, probe.IndexOf('/')));
+        }
+    }
+
     public static bool EnsureRunning(ProcessWindowStyle windowStyle)
     {
+        KeepWebRtcOnLan();
         if (PortOpen(8443) || PortOpen(8444)) return WaitForPorts();
 
         string dir = FindDir();
