@@ -122,6 +122,35 @@ test("phone sender streams live frames into the OBS receiver page", async () => 
   await ctx.close();
 });
 
+test("a receiver tab on the laptop can't knock OBS's source offline", async () => {
+  const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
+  try {
+    const obs = await ctx.newPage();
+    await obs.addInitScript(() => {
+      window.obsstudio = {};
+    });
+    await obs.goto(`${HTTP_BASE}/receiver.html`);
+    await obs.waitForTimeout(500);
+
+    const tab = await ctx.newPage();
+    await tab.goto(`${HTTP_BASE}/receiver.html`);
+    await tab.waitForURL("**/viewer.html", { timeout: 10000 });
+
+    const sender = await ctx.newPage();
+    await sender.goto(`${HTTPS_BASE}/sender.html`);
+    for (const page of [obs, tab]) {
+      await page.waitForFunction(
+        () => document.getElementById("feed").videoWidth > 0,
+        null,
+        { timeout: 20000 },
+      );
+    }
+    assert.ok(obs.url().endsWith("/receiver.html"), "OBS should keep the receiver page");
+  } finally {
+    await ctx.close();
+  }
+});
+
 test("a second sender tab supersedes the first without a reconnect war", async () => {
   const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
   try {
