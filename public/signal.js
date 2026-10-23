@@ -38,12 +38,17 @@ export class Signal extends EventTarget {
     const obs = window.obsstudio ? "&obs=1" : "";
     const url = `${proto}://${location.host}/ws?role=${this.role}${obs}`;
     const ws = new WebSocket(url);
+    ws.binaryType = "arraybuffer";
     this.ws = ws;
     ws.onopen = () => {
       this.reconnectMs = 500;
       this.dispatchEvent(new Event("open"));
     };
     ws.onmessage = (e) => {
+      if (e.data instanceof ArrayBuffer) {
+        this.dispatchEvent(new CustomEvent("binary", { detail: e.data }));
+        return;
+      }
       let msg;
       try {
         msg = JSON.parse(e.data);
@@ -74,6 +79,9 @@ export class Signal extends EventTarget {
   send(obj) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN)
       this.ws.send(JSON.stringify(obj));
+  }
+  sendBinary(buf) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) this.ws.send(buf);
   }
 }
 

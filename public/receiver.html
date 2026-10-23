@@ -20,6 +20,16 @@
         background: #000;
         display: block;
       }
+      #wsFeed {
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100vh;
+        object-fit: cover;
+      }
+      #wsFeed[hidden] {
+        display: none;
+      }
       #hint {
         position: fixed;
         inset: 0;
@@ -40,6 +50,7 @@
   </head>
   <body>
     <video id="feed" playsinline autoplay muted></video>
+    <canvas id="wsFeed" hidden></canvas>
     <div id="hint">
       Waiting for the phone…<br /><small
         >Open the sender page on your iPhone</small
@@ -48,6 +59,7 @@
 
     <script type="module">
       import { Signal, RTC_CONFIG } from "/signal.js";
+      import { WsVideoPlayer } from "/ws-video.js";
 
       const feed = document.getElementById("feed");
       const hint = document.getElementById("hint");
@@ -58,6 +70,7 @@
         pc = new RTCPeerConnection(RTC_CONFIG);
         pc.ontrack = (e) => {
           feed.srcObject = e.streams[0];
+          wsFeed.hidden = true;
           hint.classList.add("hidden");
           // On a LAN we don't need much buffering — shrink it for lower latency.
           try {
@@ -69,7 +82,8 @@
         };
         pc.onconnectionstatechange = () => {
           if (
-            ["failed", "disconnected", "closed"].includes(pc.connectionState)
+            ["failed", "disconnected", "closed"].includes(pc.connectionState) &&
+            wsFeed.hidden
           ) {
             hint.classList.remove("hidden");
           }
@@ -77,6 +91,9 @@
       }
 
       const sig = new Signal("receiver");
+      const wsFeed = document.getElementById("wsFeed");
+      const wsPlayer = new WsVideoPlayer(wsFeed, sig);
+      sig.addEventListener("binary", ({ detail }) => wsPlayer.push(detail));
       sig.addEventListener("superseded", () => location.replace("/viewer.html"));
       sig.addEventListener("msg", async ({ detail: msg }) => {
         if (msg.type === "offer") {
@@ -85,6 +102,10 @@
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
           sig.send({ type: "answer", sdp: pc.localDescription });
+        } else if (msg.type === "wsConfig") {
+          wsPlayer.configure(msg);
+          wsFeed.hidden = false;
+          hint.classList.add("hidden");
         } else if (msg.type === "ice" && pc) {
           try {
             await pc.addIceCandidate(msg.candidate);

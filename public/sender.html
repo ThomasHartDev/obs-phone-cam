@@ -64,6 +64,7 @@
       import { Signal, RTC_CONFIG } from "/signal.js";
       import { CameraFilter, DEFAULT_PARAMS, PRESETS } from "/filters.js";
       import { sanitizeParams } from "/control-panel.js";
+      import { WsVideoSender } from "/ws-video.js";
 
       const raw = document.getElementById("raw");
       const canvas = document.getElementById("preview");
@@ -249,6 +250,7 @@
           updateMask(ap);
           filter.setSize(cw, ch);
           filter.render(raw, ang, ap, vw, vh);
+          wsVideo.tick();
         }
         requestAnimationFrame(drawFrame);
       }
@@ -331,7 +333,10 @@
         };
         pc.onconnectionstatechange = () => {
           const s = pc.connectionState;
-          if (s === "connected") setStatus("Live in OBS ●", "live");
+          if (s === "connected") wsVideo.stop();
+          if (s === "failed") startWsVideo();
+          if (wsVideo.running) setStatus("Live in OBS ● (through the laptop)", "live");
+          else if (s === "connected") setStatus("Live in OBS ●", "live");
           else if (s === "connecting") setStatus("Connecting…");
           else if (s === "failed" || s === "disconnected")
             setStatus("Reconnecting…", "warn");
@@ -345,7 +350,18 @@
         const desc = await pc.createOffer();
         await pc.setLocalDescription(desc);
         sig.send({ type: "offer", sdp: pc.localDescription });
-        setStatus("Connecting…");
+        if (!wsVideo.running) setStatus("Connecting…");
+        const offered = pc;
+        setTimeout(() => {
+          if (pc === offered && pc.connectionState !== "connected") startWsVideo();
+        }, 5000);
+      }
+
+      // A VPN on the phone leaves WebRTC only its tunnel, so after a few seconds
+      // without a direct path the video goes through the laptop's own connection.
+      function startWsVideo() {
+        if (!peerPresent || !wsVideo.start()) return;
+        setStatus("Live in OBS ● (through the laptop)", "live");
       }
 
       // After track changes (flip cam / res / mic), re-offer OBS + every viewer.
@@ -393,8 +409,10 @@
       }
 
       const sig = new Signal("sender");
+      const wsVideo = new WsVideoSender(canvas, sig, Math.min(targetBitrate(), 8_000_000));
       sig.addEventListener("superseded", () => {
         drawing = false;
+        wsVideo.stop();
         if (rawStream) rawStream.getTracks().forEach((t) => t.stop());
         if (pc) pc.close();
         for (const v of viewerPcs.values()) {
@@ -408,6 +426,8 @@
       sig.addEventListener("msg", async ({ detail: msg }) => {
         if (msg.type === "peer") {
           peerPresent = msg.present;
+          if (!peerPresent) wsVideo.stop();
+          wsVideo.requestKey();
           if (peerPresent) offer();
           else setStatus("Waiting for OBS…", "warn");
           broadcastState();
@@ -442,6 +462,15 @@
               await pc.addIceCandidate(msg.candidate);
             }
           } catch {}
+        } else if (msg.type === "wsStats") {
+          wsVideo.onStats(msg.frames);
+          if (wsVideo.running)
+            setStatus(
+              msg.frames ? "Live in OBS ● (through the laptop)" : "OBS isn't showing video yet…",
+              msg.frames ? "live" : "warn",
+            );
+        } else if (msg.type === "wsKey") {
+          wsVideo.requestKey(msg.codecs);
         } else if (msg.type === "control") {
           await applyControl(msg);
         }

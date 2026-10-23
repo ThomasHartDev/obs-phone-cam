@@ -15,7 +15,7 @@ iPad   Safari  board.html    ──WebRTC──►  OBS  board-receiver.html  (w
 ```
 
 - **`server.mjs`** serves the pages over HTTPS and relays WebRTC signaling. HTTPS is required: iOS Safari blocks camera access on a LAN IP unless it's a secure context.
-- The phone and OBS connect **peer to peer** on your Wi-Fi (Google STUN for ICE, no TURN needed on the same network), so the video never round-trips through a server.
+- The phone and OBS connect **peer to peer** on your Wi-Fi (Google STUN for ICE, no TURN needed on the same network), so the video never round-trips through a server. If the phone runs a VPN like Cloudflare WARP, WebRTC only gets the tunnel and can't reach the laptop. After 5 seconds without a direct connection the phone encodes the video itself (H.264 through WebCodecs) and sends it over the page's own WebSocket, which still runs on the Wi-Fi. The status reads "Live in OBS (through the laptop)". That path carries video only, so use a laptop mic in OBS.
 - OBS renders each receiver page as a **Browser Source**. Click **Start Virtual Camera** in OBS to also use the phone as a webcam in Zoom/Teams. The iPad board is a second source you can chroma-key or place beside the camera.
 
 ## Run it
