@@ -513,7 +513,11 @@ function handleWs(ws, req) {
     setTimeout(() => syncViewersToSender(), 250);
   }
 
-  ws.on("message", (data) => {
+  ws.on("message", (data, isBinary) => {
+    if (isBinary) {
+      if (role === "sender" && isOpen(peers.receiver)) peers.receiver.send(data, { binary: true });
+      return;
+    }
     const raw = data.toString();
     let msg;
     try {

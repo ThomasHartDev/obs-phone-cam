@@ -151,6 +151,41 @@ test("a receiver tab on the laptop can't knock OBS's source offline", async () =
   }
 });
 
+test("video falls back to the laptop connection when WebRTC can't connect", async () => {
+  const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
+  try {
+    const receiver = await ctx.newPage();
+    await receiver.goto(`${HTTP_BASE}/receiver.html`);
+
+    // A VPN on the phone leaves WebRTC no usable path; relay-only with no TURN does the same.
+    const sender = await ctx.newPage();
+    await sender.addInitScript(() => {
+      const Real = window.RTCPeerConnection;
+      window.RTCPeerConnection = function (config) {
+        return new Real({ ...config, iceTransportPolicy: "relay" });
+      };
+      window.RTCPeerConnection.prototype = Real.prototype;
+    });
+    await sender.goto(`${HTTPS_BASE}/sender.html`);
+
+    await receiver.waitForFunction(
+      () => {
+        const c = document.getElementById("wsFeed");
+        return !c.hidden && c.width > 300;
+      },
+      null,
+      { timeout: 20000 },
+    );
+    await sender.waitForFunction(
+      () => document.getElementById("status").textContent.includes("through the laptop"),
+      null,
+      { timeout: 10000 },
+    );
+  } finally {
+    await ctx.close();
+  }
+});
+
 test("a second sender tab supersedes the first without a reconnect war", async () => {
   const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
   try {
