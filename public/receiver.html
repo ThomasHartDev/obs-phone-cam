@@ -77,6 +77,7 @@
       }
 
       const sig = new Signal("receiver");
+      sig.addEventListener("superseded", () => location.replace("/viewer.html"));
       sig.addEventListener("msg", async ({ detail: msg }) => {
         if (msg.type === "offer") {
           buildPeer();

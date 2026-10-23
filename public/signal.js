@@ -35,7 +35,8 @@ export class Signal extends EventTarget {
   connect() {
     // ws:// when the page is served over http (OBS receiver), wss:// over https (phone).
     const proto = location.protocol === "https:" ? "wss" : "ws";
-    const url = `${proto}://${location.host}/ws?role=${this.role}`;
+    const obs = window.obsstudio ? "&obs=1" : "";
+    const url = `${proto}://${location.host}/ws?role=${this.role}${obs}`;
     const ws = new WebSocket(url);
     this.ws = ws;
     ws.onopen = () => {

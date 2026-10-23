@@ -484,6 +484,15 @@ function handleWs(ws, req) {
     return;
   }
 
+  // A receiver tab opened on the laptop must not knock OBS's source offline; it parks and
+  // switches itself to the viewer page.
+  const fromObs = url.searchParams.get("obs") === "1";
+  if (role === "receiver" && !fromObs && isOpen(peers.receiver) && peers.receiver.fromObs) {
+    ws.close(1000, "replaced");
+    return;
+  }
+  ws.fromObs = fromObs;
+
   // Newer connection of a role replaces the old one (e.g. phone reconnects).
   if (peers[role] && peers[role] !== ws) {
     try {
