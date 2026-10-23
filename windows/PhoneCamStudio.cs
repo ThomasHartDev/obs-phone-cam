@@ -69,10 +69,20 @@ internal static class PhoneCamStudio
         }
     }
 
+    // The scene helper starts the vertical recording with the main one. It runs from a
+    // sign-in Startup shortcut, so if it dies mid-session nothing brings it back but this.
+    static void EnsureSceneHelper()
+    {
+        if (PhoneCamServer.PortOpen(4456)) return;
+        string vbs = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), @"obs-assets\scripts\obs-scene-helper.vbs");
+        if (File.Exists(vbs)) Process.Start(new ProcessStartInfo { FileName = "wscript.exe", Arguments = "\"" + vbs + "\"", UseShellExecute = false });
+    }
+
     static void Run(string[] args)
     {
         // The camera browser source loads its page once, so the server must be up before OBS starts.
         if (!PhoneCamServer.EnsureRunning(ProcessWindowStyle.Minimized)) return;
+        EnsureSceneHelper();
 
         Process obs = RunningObs();
         if (obs != null)

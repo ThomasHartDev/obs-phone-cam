@@ -7,7 +7,7 @@ using System.Windows.Forms;
 
 internal static class PhoneCamServer
 {
-    static bool PortOpen(int port)
+    internal static bool PortOpen(int port)
     {
         try
         {
