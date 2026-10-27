@@ -69,6 +69,14 @@ test("pinnable launchers give their shortcut an app ID, and the board its window
   }
 });
 
+test("the board opens DRAWING_BOARD_URL, falling back to excalidraw.com", () => {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const cs = fs.readFileSync(path.join(here, "..", "windows", "DrawingBoard.cs"), "utf8");
+  assert.match(cs, /GetEnvironmentVariable\("DRAWING_BOARD_URL"\)/);
+  assert.match(cs, /\? "https:\/\/excalidraw\.com\/"/);
+  assert.doesNotMatch(cs, /t\.Contains\("Excalidraw"\)/, "board window must not depend on the page title");
+});
+
 test("openLaunchTabs staggers calls and no-ops without a function", () => {
   const hits = [];
   openLaunchTabs((u) => hits.push(u), ["a", "b"], 0);

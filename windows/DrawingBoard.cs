@@ -11,7 +11,9 @@ internal static class DrawingBoard
 {
     const string AppUserModelId = "ThomasHart.DrawingBoard";
     const int SwMaximize = 3;
-    const string Url = "https://excalidraw.com/";
+    static readonly string Url = string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("DRAWING_BOARD_URL"))
+        ? "https://excalidraw.com/"
+        : Environment.GetEnvironmentVariable("DRAWING_BOARD_URL").Trim();
     static readonly string Profile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "FreeCodeBoard");
     static readonly string ProfileArg = "--user-data-dir=\"" + Profile + "\"";
 
@@ -41,7 +43,7 @@ internal static class DrawingBoard
         return false;
     }
 
-    // Only the board profile's Excalidraw window counts, so another app's Excalidraw window never gets the pin's ID.
+    // Only the board profile's app window counts, so another Chrome window on the same page never gets the pin's ID.
     static IntPtr FindBoardWindow()
     {
         IntPtr found = IntPtr.Zero;
@@ -51,7 +53,7 @@ internal static class DrawingBoard
             StringBuilder title = new StringBuilder(256);
             GetWindowText(hwnd, title, title.Capacity);
             string t = title.ToString();
-            if (!t.Contains("Excalidraw") || t.EndsWith(" - Google Chrome")) return true;
+            if (t.Length == 0 || t.EndsWith(" - Google Chrome")) return true;
             StringBuilder cls = new StringBuilder(64);
             GetClassName(hwnd, cls, cls.Capacity);
             if (cls.ToString() != "Chrome_WidgetWin_1") return true;
