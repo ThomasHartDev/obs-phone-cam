@@ -11,9 +11,9 @@ internal static class DrawingBoard
 {
     const string AppUserModelId = "ThomasHart.DrawingBoard";
     const int SwMaximize = 3;
-    static readonly string Url = string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("DRAWING_BOARD_URL"))
+    static readonly string Url = string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("DRAWING_BOARD_URL", EnvironmentVariableTarget.User))
         ? "https://excalidraw.com/"
-        : Environment.GetEnvironmentVariable("DRAWING_BOARD_URL").Trim();
+        : Environment.GetEnvironmentVariable("DRAWING_BOARD_URL", EnvironmentVariableTarget.User).Trim();
     static readonly string Profile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "FreeCodeBoard");
     static readonly string ProfileArg = "--user-data-dir=\"" + Profile + "\"";
 
